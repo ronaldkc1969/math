@@ -4,10 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>算数クエスト 〜 小数と分数の冒険 〜</title>
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- React & ReactDOM CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel CDN (JSXのインラインコンパイル用) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body class="bg-slate-100 m-0 p-0">
@@ -18,7 +22,6 @@
     const { useState, useEffect, useRef, useCallback } = React;
 
     /* ================= Lucide アイコンのラッパーコンポーネント ================= */
-    // CDN版のlucideオブジェクトから動的にアイコンを生成します
     const Icon = ({ name, size = 24, className = "", fill = "transparent", color = "currentColor", ...props }) => {
       const targetName = name.charAt(0).toUpperCase() + name.slice(1);
       const Component = lucide[targetName] || lucide.HelpCircle;
@@ -120,7 +123,7 @@
           {parts.map((p, i) => {
             const m = p.match(/^(\d+)\/(\d+)$/);
             if (m) return <Frac key={i} n={m[1]} d={m[2]} />;
-            return <span key={i}>{p}</span>;
+            return <span key={i}>{p}</span>
           })}
         </span>
       );
@@ -153,7 +156,7 @@
       return nums.map(s => String(s).padStart(L, " "));
     }
 
-    /* ================= 筆算（たて書き：隙間削減） ================= */
+    /* ================= 筆算 ================= */
     function Hissan({ a, b, op, ans = "", size = "text-3xl" }) {
       const [A, B] = op === "×" ? alignRight([a, b]) : alignDecimals([a, b]);
       return (
@@ -258,7 +261,7 @@
       switch (v.k) {
         case "bar": return <div className={box}><BarViz v={v.v} /></div>;
         case "hissan": return <div className={box}><Hissan a={v.a} b={v.b} op={v.op} ans={v.ans ?? ""} size="text-2xl" /></div>;
-        case "div": return <div className={box}><DivHissan sor={v.sor} end={v.end} ans={v.ans ?? ""} size="text-2xl" /></div>;
+        case "div": return <div className={box}><DivHissan sor={v.sor} end={d.end} ans={v.ans ?? ""} size="text-2xl" /></div>;
         case "shift": return <div className={box}><ShiftViz {...v} /></div>;
         case "steps": return <div className="mt-2"><StepsViz lines={v.lines} /></div>;
         case "pizzas": return <div className={box}><PizzasViz list={v.list} sep={v.sep} /></div>;
@@ -764,8 +767,7 @@
       );
     }
 
-    /* ================= クイズ画面（問題定義とシャッフル実装） ================= */
-    // 前のプロンプトで定義されたQデータを参照
+    /* ================= 問題データ ================= */
     const Q = {
       d1: [
         { type: "choice", q: "0.1 が 3個 集まると いくつ？", choices: ["0.3","3","0.13","1.3"], answer: "0.3", hint: { text: "0.1＋0.1＋0.1。バーが3目盛り分たまった状態だ。", v: { k: "bar", v: 3 } } },
@@ -787,7 +789,7 @@
         { type: "input", q: "3.4＋1.5", disp: { hissan: { a: "3.4", b: "1.5", op: "＋" } }, answer: 4.9, hint: { text: "位ごとにたすだけ。くり上がりはない。", v: { k: "steps", lines: ["一の位:3＋1＝4", "小数第一位:4＋5＝9"] } } },
         { type: "input", q: "0.8−0.3", disp: { hissan: { a: "0.8", b: "0.3", op: "−" } }, answer: 0.5, hint: { text: "ひき算も同じ。小数点をそろえて 8−3。", v: { k: "hissan", a: "0.8", b: "0.3", op: "−" } } },
         { type: "input", q: "0.9−0.6", disp: { hissan: { a: "0.9", b: "0.6", op: "−" } }, answer: 0.3, hint: { text: "9−6＝3。", v: { k: "hissan", a: "0.9", b: "0.6", op: "−" } } },
-        { type: "input", q: "2.7−1.4", disp: { hissan: { a: "2.7", b: "1.4", op: "−" } }, answer: 1.3, hint: { text: "位ごとにひく：2−1と7−4。", v: { k: "steps", lines: ["一の位:2−1＝1", "小数第一位:7−4＝3"] } } },
+        { type: "input", q: "2.7−1.4", disp: { hissan: { a: "2.7", b: "1.4", op: "−" } }, answer: 1.3, hint: { text: "位ごとにひく：2−1と7−4。", v: { k: "steps", lines: ["位ごとにひく：2−1と7−4。"] } } },
         { type: "input", q: "4.6−2.1", disp: { hissan: { a: "4.6", b: "2.1", op: "−" } }, answer: 2.5, hint: { text: "位ごとにひくだけ。くり下がりはない。", v: { k: "steps", lines: ["一の位:4−2＝2", "小数第一位:6−1＝5"] } } },
         { type: "input", q: "5.9−3.6", disp: { hissan: { a: "5.9", b: "3.6", op: "−" } }, answer: 2.3, hint: { text: "5−3と9−6を、それぞれの位で。", v: { k: "hissan", a: "5.9", b: "3.6", op: "−" } } },
       ],
@@ -935,7 +937,6 @@
       const q = order[idx];
       const perQ = isBoss ? 15 : 10;
 
-      // 選択肢をアトランダムにシャッフルして保持するState
       const [shuffledChoices, setShuffledChoices] = useState([]);
 
       useEffect(() => {
@@ -1581,7 +1582,7 @@
       );
     }
 
-   const root = ReactDOM.createRoot(document.getElementById('root'));
+    const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
 </body>
