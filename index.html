@@ -1,1578 +1,1588 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import {
-  Star, Heart, Lock, Trophy, Lightbulb, Timer, ChevronLeft, ChevronRight,
-  Award, Zap, Crown, Check, X, Delete, Sparkles, Map as MapIcon,
-  ArrowRight, ArrowLeft, BookOpen, Swords, RefreshCw, RotateCcw
-} from "lucide-react";
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>算数クエスト 〜 小数と分数の冒険 〜</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-100 m-0 p-0">
 
-/* ================= フォント・アニメーション ================= */
-const FONT = "'Hiragino Maru Gothic ProN','BIZ UDGothic','M PLUS Rounded 1c','Yu Gothic UI',sans-serif";
-const MONO = "'SF Mono','Menlo','Consolas','BIZ UDGothic',monospace";
+  <div id="root"></div>
 
-const GlobalStyle = () => (
-  <style>{`
-    @keyframes confettiFall {
-      0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
-      100% { transform: translateY(110vh) rotate(720deg); opacity: 0.8; }
-    }
-    @keyframes popIn {
-      0% { transform: scale(0.4); opacity: 0; }
-      70% { transform: scale(1.12); }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    @keyframes wiggle {
-      0%,100% { transform: rotate(-4deg); }
-      50% { transform: rotate(4deg); }
-    }
-    @keyframes floaty {
-      0%,100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-    @keyframes dropIn {
-      from { transform: translateY(-16px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes spinIn {
-      from { transform: rotate(-180deg) scale(0.6); opacity: 0.3; }
-      to { transform: rotate(0deg) scale(1); opacity: 1; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      * { animation: none !important; transition: none !important; }
-    }
-  `}</style>
-);
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
 
-/* ================= 紙吹雪 ================= */
-const CONFETTI_COLORS = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#B983FF","#FF9F45","#3EDBF0"];
-function Confetti({ trigger }) {
-  const [pieces, setPieces] = useState([]);
-  useEffect(() => {
-    if (!trigger) return;
-    const arr = Array.from({ length: 44 }, (_, i) => ({
-      id: `${trigger}-${i}`,
-      left: Math.random() * 100,
-      delay: Math.random() * 0.35,
-      dur: 1.4 + Math.random() * 1.1,
-      size: 7 + Math.random() * 8,
-      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-      round: Math.random() > 0.5,
-    }));
-    setPieces(arr);
-    const t = setTimeout(() => setPieces([]), 2600);
-    return () => clearTimeout(t);
-  }, [trigger]);
-  if (pieces.length === 0) return null;
-  return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 60 }} aria-hidden="true">
-      {pieces.map(p => (
-        <div key={p.id} style={{
-          position: "absolute", top: 0, left: `${p.left}%`,
-          width: p.size, height: p.size * (p.round ? 1 : 0.6),
-          background: p.color, borderRadius: p.round ? "50%" : "2px",
-          animation: `confettiFall ${p.dur}s ${p.delay}s ease-in forwards`,
-        }} />
-      ))}
-    </div>
-  );
-}
+    /* ================= Lucide アイコンのラッパーコンポーネント ================= */
+    // CDN版のlucideオブジェクトから動的にアイコンを生成します
+    const Icon = ({ name, size = 24, className = "", fill = "transparent", color = "currentColor", ...props }) => {
+      const targetName = name.charAt(0).toUpperCase() + name.slice(1);
+      const Component = lucide[targetName] || lucide.HelpCircle;
+      return <Component size={size} className={className} fill={fill} color={color} {...props} />;
+    };
 
-/* ================= 分数・数式の表示 ================= */
-function Frac({ n, d, color }) {
-  return (
-    <span className="inline-flex flex-col items-center align-middle mx-0.5" style={{ lineHeight: 1.0, color }}>
-      <span className="px-0.5">{n}</span>
-      <span className="w-full border-t-2 border-current" />
-      <span className="px-0.5">{d}</span>
-    </span>
-  );
-}
-function FracN({ n, d, nCls = "", dCls = "" }) {
-  return (
-    <span className="inline-flex flex-col items-center align-middle mx-0.5" style={{ lineHeight: 1.0 }}>
-      <span className={`px-0.5 rounded transition-colors duration-300 ${nCls}`}>{n}</span>
-      <span className="w-full border-t-2 border-current" />
-      <span className={`px-0.5 rounded transition-colors duration-300 ${dCls}`}>{d}</span>
-    </span>
-  );
-}
-function M({ t, className = "" }) {
-  const parts = String(t).split(" ");
-  return (
-    <span className={`inline-flex items-center flex-wrap justify-center gap-0.5 ${className}`}>
-      {parts.map((p, i) => {
-        const m = p.match(/^(\d+)\/(\d+)$/);
-        if (m) return <Frac key={i} n={m[1]} d={m[2]} />;
-        return <span key={i}>{p}</span>;
-      })}
-    </span>
-  );
-}
+    /* ================= フォント・アニメーション ================= */
+    const FONT = "'Hiragino Maru Gothic ProN','BIZ UDGothic','M PLUS Rounded 1c','Yu Gothic UI',sans-serif";
+    const MONO = "'SF Mono','Menlo','Consolas','BIZ UDGothic',monospace";
 
-function Digits({ s }) {
-  return (
-    <span style={{ fontFamily: MONO, whiteSpace: "pre" }}>
-      {String(s).split("").map((c, i) =>
-        c === "." ? <span key={i} className="text-rose-500 font-extrabold">.</span> : <span key={i}>{c}</span>
-      )}
-    </span>
-  );
-}
-function alignDecimals(nums) {
-  const parts = nums.map(s => {
-    const [i, f = ""] = String(s).split(".");
-    return { i, f };
-  });
-  const maxI = Math.max(...parts.map(p => p.i.length));
-  const maxF = Math.max(...parts.map(p => p.f.length));
-  return parts.map(p => {
-    let s = p.i.padStart(maxI, " ");
-    if (maxF > 0) s += p.f.length > 0 ? "." + p.f.padEnd(maxF, " ") : " " + "".padEnd(maxF, " ");
-    return s;
-  });
-}
-/* 右揃え */
-function alignRight(nums) {
-  const L = Math.max(...nums.map(s => String(s).length));
-  return nums.map(s => String(s).padStart(L, " "));
-}
-
-/* ================= 筆算（たて書き：スペース・隙間を削減） ================= */
-function Hissan({ a, b, op, ans = "", size = "text-3xl" }) {
-  const [A, B] = op === "×" ? alignRight([a, b]) : alignDecimals([a, b]);
-  return (
-    <div className={`inline-grid ${size} font-bold text-slate-800`}
-      style={{ gridTemplateColumns: "auto auto", lineHeight: 1.1 }}>
-      <span />
-      <span className="text-right"><Digits s={A} /></span>
-      <span className="pr-2 text-slate-500">{op}</span>
-      <span className="text-right"><Digits s={B} /></span>
-      <span className="col-span-2 text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
-        {ans === "" ? "\u00A0" : <Digits s={ans} />}
-      </span>
-    </div>
-  );
-}
-function DivHissan({ sor, end, ans = "", size = "text-3xl" }) {
-  return (
-    <div className={`inline-grid ${size} font-bold text-slate-800`}
-      style={{ gridTemplateColumns: "auto auto", lineHeight: 1.1 }}>
-      <span />
-      <span className="text-center pb-0.5 text-emerald-600">{ans === "" ? "\u00A0" : <Digits s={ans} />}</span>
-      <span className="pr-1 pt-1"><Digits s={sor} /></span>
-      <span className="pt-1 pl-3 pr-2"
-        style={{ borderTop: "4px solid #334155", borderLeft: "4px solid #334155", borderTopLeftRadius: 10 }}>
-        <Digits s={end} />
-      </span>
-    </div>
-  );
-}
-
-/* ================= ヒント用のビジュアル部品 ================= */
-function BarViz({ v }) {
-  return (
-    <div>
-      <div className="flex h-10 w-full max-w-sm mx-auto rounded-xl overflow-hidden border-4 border-sky-600 bg-sky-50">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <div key={i} className="flex-1 border-r-2 border-sky-200 last:border-r-0"
-            style={{ background: i < v ? "linear-gradient(180deg,#7CD4FF,#2E86DE)" : "transparent" }} />
-        ))}
-      </div>
-      <div className="text-center mt-1 text-xs font-bold text-sky-700">0.1 が {v} 個分 ＝ {v === 10 ? "1" : `0.${v}`}</div>
-    </div>
-  );
-}
-function ShiftViz({ from, to, dir, n }) {
-  const right = dir === "right";
-  return (
-    <div className="flex items-center justify-center gap-2 flex-wrap">
-      <span className="text-2xl font-extrabold text-slate-800"><Digits s={from} /></span>
-      <span className={`flex flex-col items-center font-bold text-[10px] ${right ? "text-emerald-600" : "text-sky-600"}`}>
-        {right ? <ArrowRight size={24} /> : <ArrowLeft size={24} />}
-        小数点を{right ? "右" : "left"}へ{n}つ
-      </span>
-      <span className="text-2xl font-extrabold text-emerald-600"><Digits s={to} /></span>
-    </div>
-  );
-}
-function StepsViz({ lines }) {
-  return (
-    <div className="space-y-1">
-      {lines.map((l, i) => (
-        <div key={i} className="flex items-center gap-2 text-base font-bold text-slate-700">
-          <span className="w-5 h-5 shrink-0 rounded-full bg-amber-400 text-white text-[10px] flex items-center justify-center font-extrabold">{i + 1}</span>
-          <M t={l} />
-        </div>
-      ))}
-    </div>
-  );
-}
-function PizzasViz({ list, sep = "＝" }) {
-  return (
-    <div className="flex items-center justify-center gap-2 flex-wrap">
-      {list.map((p, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && <span className="text-2xl font-extrabold text-slate-500">{sep}</span>}
-          <div className="flex flex-col items-center">
-            <Pizza den={p.d} num={p.n} size={80} />
-            <span className="text-lg font-extrabold text-orange-700 mt-0.5"><Frac n={p.n} d={p.d} /></span>
-          </div>
-        </React.Fragment>
-      ))}
-    </div>
-  );
-}
-function FlipViz({ a, b }) {
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="flex items-center justify-center gap-1 text-2xl font-extrabold text-slate-800">
-        <Frac n={a[0]} d={a[1]} /><span>÷</span><Frac n={b[0]} d={b[1]} />
-        <ArrowRight className="text-slate-400" size={20} />
-        <Frac n={a[0]} d={a[1]} /><span>×</span><Frac n={b[1]} d={b[0]} color="#E8590C" />
-      </div>
-      <div className="flex items-center gap-1 text-xs font-bold text-orange-700">
-        <RefreshCw size={14} /> 後ろの分数をひっくり返してかけ算に！
-      </div>
-    </div>
-  );
-}
-function HintVisual({ v }) {
-  if (!v) return null;
-  const box = "mt-2 flex justify-center";
-  switch (v.k) {
-    case "bar": return <div className={box}><BarViz v={v.v} /></div>;
-    case "hissan": return <div className={box}><Hissan a={v.a} b={v.b} op={v.op} ans={v.ans ?? ""} size="text-2xl" /></div>;
-    case "div": return <div className={box}><DivHissan sor={v.sor} end={v.end} ans={v.ans ?? ""} size="text-2xl" /></div>;
-    case "shift": return <div className={box}><ShiftViz {...v} /></div>;
-    case "steps": return <div className="mt-2"><StepsViz lines={v.lines} /></div>;
-    case "pizzas": return <div className={box}><PizzasViz list={v.list} sep={v.sep} /></div>;
-    case "flip": return <div className={box}><FlipViz a={v.a} b={v.b} /></div>;
-    default: return null;
-  }
-}
-
-/* ================= ステップ再生プレイヤー ================= */
-function StepPlayer({ captions, children }) {
-  const [s, setS] = useState(0);
-  const last = captions.length - 1;
-  return (
-    <div>
-      <div className="flex justify-center items-center py-2" style={{ minHeight: 100 }}>
-        {children(s)}
-      </div>
-      <div key={s} className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-center font-bold text-sm text-slate-700"
-        style={{ animation: "popIn 0.3s" }} aria-live="polite">
-        {captions[s]}
-      </div>
-      <div className="flex items-center justify-center gap-2 mt-2">
-        <button onClick={() => setS(v => Math.max(0, v - 1))} disabled={s === 0} aria-label="前のステップ"
-          className="w-9 h-9 rounded-full bg-slate-100 border-b-2 border-slate-200 flex items-center justify-center text-slate-500 active:scale-90 disabled:opacity-30 focus:outline-none">
-          <ChevronLeft size={20} />
-        </button>
-        <div className="flex gap-1">
-          {captions.map((_, i) => (
-            <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === s ? "bg-amber-500" : "bg-slate-300"}`} />
-          ))}
-        </div>
-        <button onClick={() => setS(v => (v === last ? 0 : v + 1))} aria-label={s === last ? "はじめから" : "次のステップ"}
-          className="h-9 px-3 rounded-full text-white font-bold text-xs flex items-center gap-1 shadow active:scale-95 focus:outline-none"
-          style={{ background: "linear-gradient(135deg,#FBBF24,#F59E0B)" }}>
-          {s === last ? <><RotateCcw size={14} /> 最初から</> : <>次へ <ChevronRight size={16} /></>}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function DemoAddSubNoCarry() {
-  return (
-    <StepPlayer captions={[
-      "小数点をタテにそろえて書く。点線の上に点が並ぶ",
-      "右の位から計算する：3＋4＝7",
-      "小数点を、そのまま真下におろす",
-      "一の位は 0＋0＝0。答えは 0.7！",
-    ]}>
-      {(s) => (
-        <div className="relative pl-8 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
-          <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-300" style={{ right: "1.45ch" }} />
-          <div className="text-right">
-            <span>0</span><span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>3</span>
-          </div>
-          <div className="text-right relative">
-            <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>＋</span>
-            <span>0</span><span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>4</span>
-          </div>
-          <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>0</span>
-            <span className="text-rose-500 font-extrabold inline-block"
-              style={{ opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "dropIn 0.5s" : "none" }}>.</span>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>7</span>
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoCarry() {
-  return (
-    <StepPlayer captions={[
-      "まずは同じ：小数点をタテにそろえる",
-      "5＋7＝12。「2」を書いて…",
-      "「1」は一の位へくり上げる！",
-      "くり上げた1があるので、一の位は 1",
-      "小数点をおろして…答えは 1.2！",
-    ]}>
-      {(s) => (
-        <div className="relative pl-8 pt-6 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
-          <div className="absolute bottom-0 border-l-2 border-dashed border-rose-300" style={{ right: "1.45ch", top: "1.5rem" }} />
-          <span className="absolute text-lg font-extrabold text-rose-500"
-            style={{ right: "2.35ch", top: "0.2rem", opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "popIn 0.4s" : "none" }}>
-            1
-          </span>
-          <div className="text-right">
-            <span className={`rounded transition-colors ${s === 3 ? "bg-amber-200" : ""}`}>0</span>
-            <span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>5</span>
-          </div>
-          <div className="text-right relative">
-            <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>＋</span>
-            <span className={`rounded transition-colors ${s === 3 ? "bg-amber-200" : ""}`}>0</span>
-            <span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>7</span>
-          </div>
-          <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>1</span>
-            <span className="text-rose-500 font-extrabold inline-block"
-              style={{ opacity: s >= 4 ? 1 : 0, animation: s === 4 ? "dropIn 0.5s" : "none" }}>.</span>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>2</span>
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoBorrow() {
-  return (
-    <StepPlayer captions={[
-      "小数点をタテにそろえる",
-      "4から6はひけない…",
-      "一の位から1借りる（くり下げ）。1は0になり、4は14に！",
-      "14−6＝8",
-      "一の位は 0−0＝0。小数点をおろして、答えは 0.8！",
-    ]}>
-      {(s) => (
-        <div className="relative pl-8 pt-6 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
-          <div className="absolute bottom-0 border-l-2 border-dashed border-rose-300" style={{ right: "1.45ch", top: "1.5rem" }} />
-          <span className="absolute text-base font-extrabold text-rose-500"
-            style={{ right: "2.45ch", top: "0.3rem", opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "popIn 0.4s" : "none" }}>0</span>
-          <span className="absolute text-base font-extrabold text-rose-500"
-            style={{ right: "0.1ch", top: "0.3rem", opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "popIn 0.4s" : "none" }}>14</span>
-          <div className="text-right">
-            <span className={`transition-all duration-300 ${s >= 2 ? "line-through opacity-40" : ""}`}>1</span>
-            <span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 || s === 3 ? "bg-amber-200" : ""}`}>4</span>
-          </div>
-          <div className="text-right relative">
-            <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>−</span>
-            <span>0</span>
-            <span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 || s === 3 ? "bg-amber-200" : ""}`}>6</span>
-          </div>
-          <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 4 ? 1 : 0 }}>0</span>
-            <span className="text-rose-500 font-extrabold inline-block"
-              style={{ opacity: s >= 4 ? 1 : 0, animation: s === 4 ? "dropIn 0.5s" : "none" }}>.</span>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>8</span>
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DotSlide({ chars, dotPos, dotOpacity = 1, hidden = [], cw = 32 }) {
-  return (
-    <div className="relative inline-flex pb-1" style={{ fontFamily: MONO }}>
-      {chars.map((c, i) => (
-        <span key={i} className="text-center text-3xl font-extrabold text-slate-800 transition-opacity duration-500"
-          style={{ width: cw, opacity: hidden.includes(i) ? 0 : 1 }}>{c}</span>
-      ))}
-      <span className="absolute text-3xl font-extrabold text-rose-500"
-        style={{ left: dotPos * cw - 6, bottom: -2, opacity: dotOpacity, transition: "left 0.7s, opacity 0.7s" }}>.</span>
-    </div>
-  );
-}
-
-function DemoShiftX10() {
-  return (
-    <StepPlayer captions={[
-      "2.5 を10倍すると、どうなる？",
-      "小数点が右へ1つジャンプ！",
-      "一番右に来た小数点は書かなくてOK。答えは 25！",
-    ]}>
-      {(s) => (
-        <div className="flex items-center gap-3">
-          <DotSlide chars={["2","5"]} dotPos={s >= 1 ? 2 : 1} dotOpacity={s >= 2 ? 0 : 1} />
-          <span className="text-xl font-extrabold text-emerald-600 transition-opacity duration-500"
-            style={{ opacity: s >= 2 ? 1 : 0 }}>＝ 25</span>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-function DemoShiftDiv10() {
-  return (
-    <StepPlayer captions={[
-      "3 は「3.」と考えられる（小数点は一番右にかくれている）",
-      "÷10 で小数点が左へ1つ。空いた場所には 0 が入る",
-      "答えは 0.3！",
-    ]}>
-      {(s) => (
-        <div className="flex items-center gap-3">
-          <DotSlide chars={["0","3"]} dotPos={s >= 1 ? 1 : 2} dotOpacity={s >= 1 ? 1 : 0.35} hidden={s >= 1 ? [] : [0]} />
-          <span className="text-xl font-extrabold text-emerald-600 transition-opacity duration-500"
-            style={{ opacity: s >= 2 ? 1 : 0 }}>＝ 0.3</span>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoMultRight() {
-  return (
-    <StepPlayer captions={[
-      "かけ算の筆算は「右にそろえて」書く。小数点はそろえなくてOK！",
-      "小数点を気にせず計算：2×3＝6",
-      "小数点の右にある数字を数える：0.2で1個＋0.3で1個＝合計2個",
-      "答えの右から2個分の場所に小数点。答えは 0.06！",
-    ]}>
-      {(s) => (
-        <div className="relative pl-8 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
-          <div className="text-right" style={{ whiteSpace: "pre" }}>
-            <span> 0</span><span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : s === 2 ? "bg-orange-200 underline decoration-2 decoration-orange-500" : ""}`}>2</span>
-          </div>
-          <div className="text-right relative" style={{ whiteSpace: "pre" }}>
-            <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>×</span>
-            <span> 0</span><span className="text-rose-500 font-extrabold">.</span>
-            <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : s === 2 ? "bg-orange-200 underline decoration-2 decoration-orange-500" : ""}`}>3</span>
-          </div>
-          <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600" style={{ whiteSpace: "pre" }}>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>0</span>
-            <span className="text-rose-500 font-extrabold inline-block"
-              style={{ opacity: s >= 3 ? 1 : 0, animation: s === 3 ? "dropIn 0.5s" : "none" }}>.</span>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>0</span>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>6</span>
-          </div>
-          <div className="absolute -right-2 top-4 text-[10px] font-extrabold text-orange-600 transition-opacity duration-500"
-            style={{ opacity: s === 2 ? 1 : 0, fontFamily: FONT, lineHeight: 1.0 }}>←1個<br />←1個</div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoDivMove() {
-  return (
-    <StepPlayer captions={[
-      "1.2÷0.4 …小数のままでは割りにくい",
-      "両方の小数点を右へ1つ動かす（＝両方を10倍）。4 と 12 に変身！",
-      "12÷4＝3。変身しても答えは同じ！",
-    ]}>
-      {(s) => (
-        <div className="inline-grid" style={{ gridTemplateColumns: "auto auto" }}>
-          <span />
-          <span className="text-center pb-0.5 text-3xl font-extrabold text-emerald-600"
-            style={{ opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "dropIn 0.5s" : "none" }}>3</span>
-          <div className="pr-1 pt-1">
-            <DotSlide chars={["0","4"]} cw={28} dotPos={s >= 1 ? 2 : 1} dotOpacity={s >= 1 ? 0 : 1} hidden={s >= 1 ? [0] : []} />
-          </div>
-          <div className="pt-1 pl-2 pr-2"
-            style={{ borderTop: "4px solid #334155", borderLeft: "4px solid #334155", borderTopLeftRadius: 10 }}>
-            <DotSlide chars={["1","2"]} cw={28} dotPos={s >= 1 ? 2 : 1} dotOpacity={s >= 1 ? 0 : 1} />
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function FracBar({ fills, lines, width = 220, height = 36 }) {
-  return (
-    <div className="relative rounded-xl border-4 border-slate-500 overflow-hidden bg-white" style={{ width, height }}>
-      <div className="flex h-full">
-        {fills.map((f, i) => (
-          <div key={i} className="h-full transition-all duration-700"
-            style={{ width: `${(f.on ? f.w : 0) * 100}%`, background: f.color }} />
-        ))}
-      </div>
-      {lines.map((l, i) => (
-        <div key={i} className="absolute top-0 bottom-0 bg-slate-500 transition-opacity duration-700"
-          style={{ left: `${l.p * 100}%`, width: 2, opacity: l.on ? 1 : 0 }} />
-      ))}
-    </div>
-  );
-}
-
-function DemoYakubun() {
-  return (
-    <StepPlayer captions={[
-      "2/4 ＝ 4等分のうち2個分（オレンジ）",
-      "2個ずつまとめる（分子・分母を2で割る）。しきりが消えても…",
-      "オレンジの量はそのまま！ 2/4 ＝ 1/2。これが約分",
-    ]}>
-      {(s) => (
-        <div className="flex flex-col items-center gap-1">
-          <FracBar
-            fills={[{ w: 0.5, color: "linear-gradient(180deg,#FFB25E,#E8590C)", on: true }]}
-            lines={[{ p: 0.25, on: s < 1 }, { p: 0.5, on: true }, { p: 0.75, on: s < 1 }]} />
-          <div className="relative h-8 text-xl font-extrabold text-orange-700">
-            <span className="absolute left-1/2 -translate-x-1/2 transition-opacity duration-500" style={{ opacity: s < 2 ? 1 : 0 }}><Frac n="2" d="4" /></span>
-            <span className="absolute left-1/2 -translate-x-1/2 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}><Frac n="1" d="2" /></span>
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoTsubun() {
-  const sixth = (i) => i / 6;
-  return (
-    <StepPlayer captions={[
-      "1/2 と 1/3。分母が違うと、このままではたせない…",
-      "どちらも「6等分」に切り直す（通分）→ 3/6 と 2/6 に！",
-      "分母がそろった！ 3/6 ＋ 2/6 ＝ 5/6",
-    ]}>
-      {(s) => (
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center gap-2">
-            <FracBar width={180} height={30}
-              fills={[{ w: 1 / 2, color: "linear-gradient(180deg,#FFB25E,#E8590C)", on: true }]}
-              lines={[{ p: 0.5, on: true }, { p: sixth(1), on: s >= 1 }, { p: sixth(2), on: s >= 1 }, { p: sixth(4), on: s >= 1 }, { p: sixth(5), on: s >= 1 }]} />
-            <span className="text-lg font-extrabold text-orange-700 w-8 text-center">
-              {s >= 1 ? <Frac n="3" d="6" /> : <Frac n="1" d="2" />}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <FracBar width={180} height={30}
-              fills={[{ w: 1 / 3, color: "linear-gradient(180deg,#7CD4FF,#2E86DE)", on: true }]}
-              lines={[{ p: sixth(2), on: true }, { p: sixth(4), on: true }, { p: sixth(1), on: s >= 1 }, { p: sixth(3), on: s >= 1 }, { p: sixth(5), on: s >= 1 }]} />
-            <span className="text-lg font-extrabold text-sky-700 w-8 text-center">
-              {s >= 1 ? <Frac n="2" d="6" /> : <Frac n="1" d="3" />}
-            </span>
-          </div>
-          <div className="text-lg font-extrabold text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}>
-            <M t="3/6 ＋ 2/6 ＝ 5/6" />
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoFracAddSame() {
-  return (
-    <StepPlayer captions={[
-      "まず 1/4（オレンジ）",
-      "そこに 2/4（青）をたすと…",
-      "合わせて 3/4！分母はそのまま、分子だけ 1＋2＝3",
-    ]}>
-      {(s) => (
-        <div className="flex flex-col items-center gap-1">
-          <FracBar
-            fills={[
-              { w: 0.25, color: "linear-gradient(180deg,#FFB25E,#E8590C)", on: true },
-              { w: 0.5, color: "linear-gradient(180deg,#7CD4FF,#2E86DE)", on: s >= 1 },
-            ]}
-            lines={[{ p: 0.25, on: true }, { p: 0.5, on: true }, { p: 0.75, on: true }]} />
-          <div className="text-xl font-extrabold text-slate-700 flex items-center gap-0.5">
-            <span className="text-orange-700"><Frac n="1" d="4" /></span>
-            <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>＋</span>
-            <span className="text-sky-700 transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}><Frac n="2" d="4" /></span>
-            <span className="text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}>＝</span>
-            <span className="text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}><Frac n="3" d="4" /></span>
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoFracMul() {
-  return (
-    <StepPlayer captions={[
-      "分子どうしをかける：1×1＝1",
-      "分母どうしをかける：2×3＝6",
-      "答えは 1/6。最後に約分できるかもチェック！",
-    ]}>
-      {(s) => (
-        <div className="flex items-center gap-1 text-3xl font-extrabold text-slate-800">
-          <FracN n="1" d="2" nCls={s === 0 ? "bg-orange-200" : ""} dCls={s === 1 ? "bg-sky-200" : ""} />
-          <span>×</span>
-          <FracN n="1" d="3" nCls={s === 0 ? "bg-orange-200" : ""} dCls={s === 1 ? "bg-sky-200" : ""} />
-          <span>＝</span>
-          <span className="inline-flex flex-col items-center" style={{ lineHeight: 1.0 }}>
-            <span className="px-0.5 text-orange-600 inline-block" style={{ opacity: s >= 0 ? 1 : 0, animation: s === 0 ? "dropIn 0.5s" : "none" }}>1</span>
-            <span className="w-full border-t-2 border-current" />
-            <span className="px-0.5 text-sky-600 inline-block" style={{ opacity: s >= 1 ? 1 : 0, animation: s === 1 ? "dropIn 0.5s" : "none" }}>{s >= 1 ? "6" : " "}</span>
-          </span>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-function DemoFlip() {
-  return (
-    <StepPlayer captions={[
-      "1/2 ÷ 1/4。分数のわり算、このままでは大変…",
-      "後ろの分数をクルッとひっくり返す（逆数）。÷が×に変身！",
-      "あとは分子どうし・分母どうし：4/2 ＝ 2",
-    ]}>
-      {(s) => (
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center gap-1 text-3xl font-extrabold text-slate-800">
-            <Frac n="1" d="2" />
-            <span key={s >= 1 ? "x" : "d"} className={s >= 1 ? "text-orange-600" : ""}
-              style={{ display: "inline-block", animation: s === 1 ? "popIn 0.4s" : "none" }}>
-              {s >= 1 ? "×" : "÷"}
-            </span>
-            {s >= 1 ? (
-              <span key="flipped" className="inline-block" style={{ animation: s === 1 ? "spinIn 0.6s" : "none" }}>
-                <Frac n="4" d="1" color="#E8590C" />
-              </span>
-            ) : (
-              <Frac n="1" d="4" />
-            )}
-          </div>
-          <div className="text-xl font-extrabold text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}>
-            <M t="1/2 × 4/1 ＝ 4/2 ＝ 2" />
-          </div>
-        </div>
-      )}
-    </StepPlayer>
-  );
-}
-
-/* ================= ほめ言葉 ================= */
-const PRAISE = ["正解！その調子！", "お見事！完璧だ！", "素晴らしい！冴えてる！", "正解！実力がついてきた！", "ナイス！絶好調！"];
-const ENCOURAGE = ["惜しい！ヒントを見てみよう！", "大丈夫、もう一度挑戦！", "あと一歩！ヒントが助けになる！"];
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-/* ================= 問題データ ================= */
-const Q = {
-  d1: [
-    { type: "choice", q: "0.1 が 3個 集まると いくつ？", choices: ["0.3","3","0.13","1.3"], answer: "0.3", hint: { text: "0.1＋0.1＋0.1。バーが3目盛り分たまった状態だ。", v: { k: "bar", v: 3 } } },
-    { type: "choice", q: "0.1 が 7個 集まると いくつ？", choices: ["0.7","7","0.07","1.7"], answer: "0.7", hint: { text: "バーが7目盛り分。", v: { k: "bar", v: 7 } } },
-    { type: "choice", q: "0.1 が 10個 集まると いくつ？", choices: ["1","0.1","10","0.01"], answer: "1", hint: { text: "10目盛りすべてたまると、ちょうど満タン＝1になる。", v: { k: "bar", v: 10 } } },
-    { type: "choice", q: "1 を 10等分した 1つ分は？", choices: ["0.1","0.01","10","1.1"], answer: "0.1", hint: { text: "1÷10の1つ分。バーの1目盛りがそれだ。", v: { k: "bar", v: 1 } } },
-    { type: "choice", q: "0.1 が 12個 集まると いくつ？", choices: ["1.2","0.12","12","2.1"], answer: "1.2", hint: { text: "10個でちょうど1。残り2個分をたす。", v: { k: "steps", lines: ["10個で 1", "残り2個で 0.2", "合わせると？"] } } },
-    { type: "choice", q: "0.5 は 0.1 が 何個分？", choices: ["5個","50個","0.5個","10個"], answer: "5個", hint: { text: "バーが5目盛り分たまった状態が0.5。", v: { k: "bar", v: 5 } } },
-    { type: "choice", q: "1.8 は 0.1 が 何個分？", choices: ["18個","8個","180個","1.8個"], answer: "18個", hint: { text: "1と0.8に分けて数える。", v: { k: "steps", lines: ["1 → 0.1が10個", "0.8 → 0.1が8個", "合わせて何個？"] } } },
-    { type: "choice", q: "0.9 より 0.1 大きい数は？", choices: ["1","0.10","1.9","0.91"], answer: "1", hint: { text: "9目盛りに1目盛りたすと、満タンになる。", v: { k: "bar", v: 10 } } },
-    { type: "choice", q: "2.3 の「3」は 何の位？", choices: ["小数第一位（0.1の位）","一の位","十の位","小数第二位"], answer: "小数第一位（0.1の位）", hint: { text: "小数点のすぐ右が小数第一位。0.1がいくつ分かを表す。", v: { k: "steps", lines: ["2 → 一の位", "3 → 小数点のすぐ右＝小数第一位"] } } },
-    { type: "choice", q: "0.01 が 10個 集まると いくつ？", choices: ["0.1","1","0.01","0.001"], answer: "0.1", hint: { text: "位が1つ上がる関係を思い出そう。", v: { k: "steps", lines: ["0.01が10個で 0.1", "0.1が10個で 1"] } } },
-  ],
-  d2: [
-    { type: "input", q: "0.2＋0.3", disp: { hissan: { a: "0.2", b: "0.3", op: "＋" } }, answer: 0.5, hint: { text: "小数点をタテにそろえて、2＋3を計算。", v: { k: "hissan", a: "0.2", b: "0.3", op: "＋" } } },
-    { type: "input", q: "0.1＋0.6", disp: { hissan: { a: "0.1", b: "0.6", op: "＋" } }, answer: 0.7, hint: { text: "1＋6＝7。小数点はそのまま下におろす。", v: { k: "hissan", a: "0.1", b: "0.6", op: "＋" } } },
-    { type: "input", q: "0.4＋0.5", disp: { hissan: { a: "0.4", b: "0.5", op: "＋" } }, answer: 0.9, hint: { text: "4＋5＝9。", v: { k: "hissan", a: "0.4", b: "0.5", op: "＋" } } },
-    { type: "input", q: "1.2＋2.3", disp: { hissan: { a: "1.2", b: "2.3", op: "＋" } }, answer: 3.5, hint: { text: "位ごとに計算：一の位は1＋2、小数第一位は2＋3。", v: { k: "steps", lines: ["一の位:1＋2＝3", "小数第一位:2＋3＝5"] } } },
-    { type: "input", q: "3.4＋1.5", disp: { hissan: { a: "3.4", b: "1.5", op: "＋" } }, answer: 4.9, hint: { text: "位ごとにたすだけ。くり上がりはない。", v: { k: "steps", lines: ["一の位:3＋1＝4", "小数第一位:4＋5＝9"] } } },
-    { type: "input", q: "0.8−0.3", disp: { hissan: { a: "0.8", b: "0.3", op: "−" } }, answer: 0.5, hint: { text: "ひき算も同じ。小数点をそろえて 8−3。", v: { k: "hissan", a: "0.8", b: "0.3", op: "−" } } },
-    { type: "input", q: "0.9−0.6", disp: { hissan: { a: "0.9", b: "0.6", op: "−" } }, answer: 0.3, hint: { text: "9−6＝3。", v: { k: "hissan", a: "0.9", b: "0.6", op: "−" } } },
-    { type: "input", q: "2.7−1.4", disp: { hissan: { a: "2.7", b: "1.4", op: "−" } }, answer: 1.3, hint: { text: "位ごとにひく：2−1と7−4。", v: { k: "steps", lines: ["一の位:2−1＝1", "小数第一位:7−4＝3"] } } },
-    { type: "input", q: "4.6−2.1", disp: { hissan: { a: "4.6", b: "2.1", op: "−" } }, answer: 2.5, hint: { text: "位ごとにひくだけ。くり下がりはない。", v: { k: "steps", lines: ["一の位:4−2＝2", "小数第一位:6−1＝5"] } } },
-    { type: "input", q: "5.9−3.6", disp: { hissan: { a: "5.9", b: "3.6", op: "−" } }, answer: 2.3, hint: { text: "5−3と9−6を、それぞれの位で。", v: { k: "hissan", a: "5.9", b: "3.6", op: "−" } } },
-  ],
-  d3: [
-    { type: "input", q: "0.5＋0.7", disp: { hissan: { a: "0.5", b: "0.7", op: "＋" } }, answer: 1.2, hint: { text: "5＋7＝12。1を一の位にくり上げる。", v: { k: "steps", lines: ["5＋7＝12", "2を書いて1をくり上げ", "答えは 1.2 の形になる"] } } },
-    { type: "input", q: "0.6＋0.8", disp: { hissan: { a: "0.6", b: "0.8", op: "＋" } }, answer: 1.4, hint: { text: "6＋8＝14。くり上がりに注意。", v: { k: "steps", lines: ["6＋8＝14", "4を書いて1をくり上げ"] } } },
-    { type: "input", q: "0.9＋0.4", disp: { hissan: { a: "0.9", b: "0.4", op: "＋" } }, answer: 1.3, hint: { text: "9＋4＝13。", v: { k: "steps", lines: ["9＋4＝13", "3を書いて1をくり上げ"] } } },
-    { type: "input", q: "0.7＋0.7", disp: { hissan: { a: "0.7", b: "0.7", op: "＋" } }, answer: 1.4, hint: { text: "7＋7＝14。", v: { k: "steps", lines: ["7＋7＝14", "4を書いて1をくり上げ"] } } },
-    { type: "input", q: "2.3＋1.9", disp: { hissan: { a: "2.3", b: "1.9", op: "＋" } }, answer: 4.2, hint: { text: "3＋9＝12でくり上がり。一の位は2＋1＋1。", v: { k: "steps", lines: ["3＋9＝12 → 2を書いて1くり上げ", "一の位:2＋1＋1＝4"] } } },
-    { type: "input", q: "1.8＋2.5", disp: { hissan: { a: "1.8", b: "2.5", op: "＋" } }, answer: 4.3, hint: { text: "8＋5＝13でくり上がり。", v: { k: "steps", lines: ["8＋5＝13 → 3を書いて1くり上げ", "一の位:1＋2＋1＝4"] } } },
-    { type: "input", q: "3.6＋2.7", disp: { hissan: { a: "3.6", b: "2.7", op: "＋" } }, answer: 6.3, hint: { text: "6＋7＝13でくり上がり。", v: { k: "steps", lines: ["6＋7＝13 → 3を書いて1くり上げ", "一の位:3＋2＋1＝6"] } } },
-    { type: "input", q: "2.9＋1.6", disp: { hissan: { a: "2.9", b: "1.6", op: "＋" } }, answer: 4.5, hint: { text: "9＋6＝15でくり上がり。", v: { k: "steps", lines: ["9＋6＝15 → 5を書いて1くり上げ", "一の位:2＋1＋1＝4"] } } },
-    { type: "input", q: "0.75＋0.25", disp: { hissan: { a: "0.75", b: "0.25", op: "＋" } }, answer: 1, hint: { text: "75＋25＝100。ちょうどくり上がって、きりのいい数になる。", v: { k: "hissan", a: "0.75", b: "0.25", op: "＋" } } },
-    { type: "input", q: "6.4＋3.8", disp: { hissan: { a: "6.4", b: "3.8", op: "＋" } }, answer: 10.2, hint: { text: "4＋8＝12。一の位も6＋3＋1＝10で、さらにくり上がる。", v: { k: "steps", lines: ["4＋8＝12 → 2を書いて1くり上げ", "一の位:6＋3＋1＝10"] } } },
-  ],
-  d4: [
-    { type: "input", q: "1.4−0.6", disp: { hissan: { a: "1.4", b: "0.6", op: "−" } }, answer: 0.8, hint: { text: "4から6はひけない。一の位から1くり下げて 14−6。", v: { k: "steps", lines: ["4−6はできない", "1くり下げて 14−6＝8", "一の位は 0"] } } },
-    { type: "input", q: "1.2−0.5", disp: { hissan: { a: "1.2", b: "0.5", op: "−" } }, answer: 0.7, hint: { text: "くり下げて 12−5。", v: { k: "steps", lines: ["2−5はできない", "1くり下げて 12−5＝7"] } } },
-    { type: "input", q: "1.3−0.8", disp: { hissan: { a: "1.3", b: "0.8", op: "−" } }, answer: 0.5, hint: { text: "くり下げて 13−8。", v: { k: "steps", lines: ["3−8はできない", "1くり下げて 13−8＝5"] } } },
-    { type: "input", q: "2.2−0.9", disp: { hissan: { a: "2.2", b: "0.9", op: "−" } }, answer: 1.3, hint: { text: "くり下げて 12−9。一の位は 1−0。", v: { k: "steps", lines: ["1くり下げて 12−9＝3", "一の位:1−0＝1"] } } },
-    { type: "input", q: "3.1−1.4", disp: { hissan: { a: "3.1", b: "1.4", op: "−" } }, answer: 1.7, hint: { text: "くり下げて 11−4。一の位は 2−1。", v: { k: "steps", lines: ["1くり下げて 11−4＝7", "一の位:2−1＝1"] } } },
-    { type: "input", q: "4.3−1.7", disp: { hissan: { a: "4.3", b: "1.7", op: "−" } }, answer: 2.6, hint: { text: "くり下げて 13−7。一の位は 3−1。", v: { k: "steps", lines: ["1くり下げて 13−7＝6", "一の位:3−1＝2"] } } },
-    { type: "input", q: "5.1−2.6", disp: { hissan: { a: "5.1", b: "2.6", op: "−" } }, answer: 2.5, hint: { text: "くり下げて 11−6。一の位は 4−2。", v: { k: "steps", lines: ["1くり下げて 11−6＝5", "一の位:4−2＝2"] } } },
-    { type: "input", q: "3−1.2", disp: { hissan: { a: "3.0", b: "1.2", op: "−" } }, answer: 1.8, hint: { text: "3を「3.0」と考えると小数点がそろう。くり下がりあり。", v: { k: "hissan", a: "3.0", b: "1.2", op: "−" } } },
-    { type: "input", q: "5−0.5", disp: { hissan: { a: "5.0", b: "0.5", op: "−" } }, answer: 4.5, hint: { text: "5を「5.0」と考えて、くり下げて計算。", v: { k: "hissan", a: "5.0", b: "0.5", op: "−" } } },
-    { type: "input", q: "6−2.4", disp: { hissan: { a: "6.0", b: "2.4", op: "−" } }, answer: 3.6, hint: { text: "6を「6.0」と考える。くり下げて 10−4。", v: { k: "steps", lines: ["6 → 6.0 と考える", "1くり下げて 10−4＝6", "一の位:5−2＝3"] } } },
-  ],
-  d5: [
-    { type: "choice", q: "0.3 × 10 ＝", choices: ["3","0.03","30","0.3"], answer: "3", hint: { text: "×10すると、小数点が右へ1つ動く。", v: { k: "shift", from: "0.3", to: "3", dir: "right", n: 1 } } },
-    { type: "choice", q: "2.5 × 10 ＝", choices: ["25","2.50","250","0.25"], answer: "25", hint: { text: "小数点が右へ1つ！", v: { k: "shift", from: "2.5", to: "25", dir: "right", n: 1 } } },
-    { type: "choice", q: "0.07 × 10 ＝", choices: ["0.7","7","0.007","70"], answer: "0.7", hint: { text: "小数点が右へ1つ動くだけ。", v: { k: "shift", from: "0.07", to: "0.7", dir: "right", n: 1 } } },
-    { type: "choice", q: "0.4×3", disp: { hissan: { a: "0.4", b: "3", op: "×" } }, choices: ["1.2","0.12","12","0.7"], answer: "1.2", hint: { text: "まず4×3。小数点の右の数字は合計1個なので、答えも1個。", v: { k: "steps", lines: ["4×3＝12", "小数点の右は合計1個", "右から1個の場所に小数点"] } } },
-    { type: "choice", q: "1.5×2", disp: { hissan: { a: "1.5", b: "2", op: "×" } }, choices: ["3","2.5","1.52","30"], answer: "3", hint: { text: "15×2＝30。小数点をつけると3.0。最後の0は書かない。", v: { k: "steps", lines: ["15×2＝30", "右から1個の場所に小数点 → 3.0", "3.0 ＝ 3"] } } },
-    { type: "choice", q: "2.3×3", disp: { hissan: { a: "2.3", b: "3", op: "×" } }, choices: ["6.9","69","0.69","6.6"], answer: "6.9", hint: { text: "23×3＝69に小数点をつける。", v: { k: "steps", lines: ["23×3＝69", "小数点の右は合計1個 → 6.9"] } } },
-    { type: "choice", q: "0.6×5", disp: { hissan: { a: "0.6", b: "5", op: "×" } }, choices: ["3","0.3","30","3.5"], answer: "3", hint: { text: "6×5＝30 → 3.0。最後の0は消える。", v: { k: "steps", lines: ["6×5＝30", "右から1個の場所に小数点 → 3.0", "3.0 ＝ 3"] } } },
-    { type: "choice", q: "0.2×0.3", disp: { hissan: { a: "0.2", b: "0.3", op: "×" } }, choices: ["0.06","0.6","6","0.006"], answer: "0.06", hint: { text: "2×3＝6。小数点の右の数字は「合計」で数える。", v: { k: "steps", lines: ["2×3＝6", "小数点の右:1個＋1個＝合計2個", "6の前に0を入れて 0.06"] } } },
-    { type: "choice", q: "0.5×0.4", disp: { hissan: { a: "0.5", b: "0.4", op: "×" } }, choices: ["0.2","2","0.02","0.9"], answer: "0.2", hint: { text: "5×4＝20 → 0.20。最後の0は書かない。", v: { k: "steps", lines: ["5×4＝20", "小数点の右は合計2個 → 0.20", "0.20 ＝ 0.2"] } } },
-    { type: "choice", q: "1.2×0.4", disp: { hissan: { a: "1.2", b: "0.4", op: "×" } }, choices: ["0.48","4.8","48","0.048"], answer: "0.48", hint: { text: "12×4＝48。小数点の右は合計2個。", v: { k: "steps", lines: ["12×4＝48", "小数点の右:1個＋1個＝合計2個", "答えは 0.48"] } } },
-  ],
-  /* わり算 */
-  d6: [
-    { type: "choice", q: "3 ÷ 10 ＝", choices: ["0.3","30","0.03","3.1"], answer: "0.3", hint: { text: "÷10すると、小数点が左へ1つ動く。", v: { k: "shift", from: "3", to: "0.3", dir: "left", n: 1 } } },
-    { type: "choice", q: "47 ÷ 10 ＝", choices: ["4.7","0.47","470","47.1"], answer: "4.7", hint: { text: "小数点が左へ1つ！", v: { k: "shift", from: "47", to: "4.7", dir: "left", n: 1 } } },
-    { type: "choice", q: "0.6 ÷ 10 ＝", choices: ["0.06","6","0.6","0.006"], answer: "0.06", hint: { text: "小数点が左へ1つ。空いた場所に0が入る。", v: { k: "shift", from: "0.6", to: "0.06", dir: "left", n: 1 } } },
-    { type: "choice", q: "4.8÷2", disp: { div: { sor: "2", end: "4.8" } }, choices: ["2.4","24","0.24","2.6"], answer: "2.4", hint: { text: "整数部分と小数部分に分けて割る。", v: { k: "steps", lines: ["4÷2＝2", "0.8÷2＝0.4", "合わせると？"] } } },
-    { type: "choice", q: "6.9÷3", disp: { div: { sor: "3", end: "6.9" } }, choices: ["2.3","23","0.23","2.6"], answer: "2.3", hint: { text: "6÷3と0.9÷3に分けて考える。", v: { k: "steps", lines: ["6÷3＝2", "0.9÷3＝0.3"] } } },
-    { type: "choice", q: "0.9÷3", disp: { div: { sor: "3", end: "0.9" } }, choices: ["0.3","3","0.03","2.7"], answer: "0.3", hint: { text: "0.1が9個を3等分。1人分は0.1が3個。", v: { k: "steps", lines: ["9÷3＝3", "0.1が3個分"] } } },
-    { type: "choice", q: "8.4÷4", disp: { div: { sor: "4", end: "8.4" } }, choices: ["2.1","21","0.21","2.4"], answer: "2.1", hint: { text: "8÷4と0.4÷4に分ける。", v: { k: "steps", lines: ["8÷4＝2", "0.4÷4＝0.1"] } } },
-    { type: "choice", q: "1.2÷0.4", disp: { div: { sor: "0.4", end: "1.2" } }, choices: ["3","0.3","30","0.8"], answer: "3", hint: { text: "両方の小数点を右へ1つ動かして、整数のわり算に変身。", v: { k: "steps", lines: ["両方を10倍する", "1.2÷0.4 → 12÷4", "あとは 12÷4 を計算"] } } },
-    { type: "choice", q: "6÷0.5", disp: { div: { sor: "0.5", end: "6" } }, choices: ["12","3","1.2","0.12"], answer: "12", hint: { text: "両方を10倍して60÷5に変身。", v: { k: "steps", lines: ["両方を10倍する", "6÷0.5 → 60÷5", "あとは 60÷5 を計算"] } } },
-    { type: "choice", q: "3.6÷0.6", disp: { div: { sor: "0.6", end: "3.6" } }, choices: ["6","0.6","60","3"], answer: "6", hint: { text: "両方の小数点を右へ動かして、36÷6に。", v: { k: "steps", lines: ["両方を10倍する", "3.6÷0.6 → 36÷6", "あとは 36÷6 を計算"] } } },
-  ],
-  d7: [
-    { type: "choice", q: "0.6＋0.8", disp: { hissan: { a: "0.6", b: "0.8", op: "＋" } }, choices: ["1.4","0.14","14","1.2"], answer: "1.4", hint: { text: "小数点をそろえて。6＋8＝14でくり上がり。", v: { k: "hissan", a: "0.6", b: "0.8", op: "＋" } } },
-    { type: "choice", q: "2.1−0.7", disp: { hissan: { a: "2.1", b: "0.7", op: "−" } }, choices: ["1.4","1.6","2.4","0.14"], answer: "1.4", hint: { text: "くり下げて 11−7＝4。一の位は 1−0。", v: { k: "steps", lines: ["1くり下げて 11−7＝4", "一の位:1−0＝1"] } } },
-    { type: "choice", q: "0.7 × 10 ＝", choices: ["7","0.07","70","0.7"], answer: "7", hint: { text: "小数点が右へ1つ！", v: { k: "shift", from: "0.7", to: "7", dir: "right", n: 1 } } },
-    { type: "choice", q: "0.05 × 10 ＝", choices: ["0.5","5","0.005","50"], answer: "0.5", hint: { text: "小数点が右へ1つ動くだけ。桁に注意！", v: { k: "shift", from: "0.05", to: "0.5", dir: "right", n: 1 } } },
-    { type: "choice", q: "9 ÷ 10 ＝", choices: ["0.9","90","0.09","1.9"], answer: "0.9", hint: { text: "小数点が左へ1つ！", v: { k: "shift", from: "9", to: "0.9", dir: "left", n: 1 } } },
-    { type: "choice", q: "3.6÷0.6", disp: { div: { sor: "0.6", end: "3.6" } }, choices: ["6","0.6","60","3"], answer: "6", hint: { text: "両方の小数点を右へ動かして、整数のわり算に。", v: { k: "steps", lines: ["両方を10倍する", "3.6÷0.6 → 36÷6"] } } },
-    { type: "choice", q: "1.25＋0.75", disp: { hissan: { a: "1.25", b: "0.75", op: "＋" } }, choices: ["2","1.9","2.1","1.75"], answer: "2", hint: { text: "25＋75＝100。ちょうどくり上がる。", v: { k: "hissan", a: "1.25", b: "0.75", op: "＋" } } },
-    { type: "choice", q: "5−0.5", disp: { hissan: { a: "5.0", b: "0.5", op: "−" } }, choices: ["4.5","5.5","0.45","4.05"], answer: "4.5", hint: { text: "5を「5.0」と考えて、小数点をそろえる。", v: { k: "hissan", a: "5.0", b: "0.5", op: "−" } } },
-    { type: "choice", q: "0.3×0.3", disp: { hissan: { a: "0.3", b: "0.3", op: "×" } }, choices: ["0.09","0.9","9","0.03"], answer: "0.09", hint: { text: "3×3＝9。小数点の右は合計2個。", v: { k: "steps", lines: ["3×3＝9", "小数点の右:1個＋1個＝2個", "答えは 0.09"] } } },
-    { type: "choice", q: "7.2÷8", disp: { div: { sor: "8", end: "7.2" } }, choices: ["0.9","9","0.09","1.1"], answer: "0.9", hint: { text: "72÷8＝9をもとに、小数点の位置を考える。", v: { k: "steps", lines: ["72÷8＝9", "7.2は72の1/10 → 答えも1/10"] } } },
-  ],
-  f1: [
-    { type: "choice", q: "ピザを 4等分した 1切れは？", choices: ["1/4","4/1","1/2","1/3"], answer: "1/4", hint: { text: "分母（下）は「何等分したか」、分子（上）は「その何個分か」。", v: { k: "pizzas", list: [{ n: 1, d: 4 }] } } },
-    { type: "choice", q: "ピザを 8等分した 3切れ分は？", choices: ["3/8","8/3","3/5","1/8"], answer: "3/8", hint: { text: "8等分だから分母は8。その3個分だから分子は3。", v: { k: "pizzas", list: [{ n: 3, d: 8 }] } } },
-    { type: "choice", q: "分母（下の数）が表すのは？", choices: ["全体を分けた数","取った個数","残りの数","ピザの枚数"], answer: "全体を分けた数", hint: { text: "3/8なら「8等分のうちの3切れ」。下の8が分けた数だ。", v: { k: "pizzas", list: [{ n: 3, d: 8 }] } } },
-    { type: "choice", q: "分子（上の数）が表すのは？", choices: ["取った個数","全体を分けた数","ピザの枚数","残りの数"], answer: "取った個数", hint: { text: "3/8の3は「8切れのうち、取った3切れ」。", v: { k: "pizzas", list: [{ n: 3, d: 8 }] } } },
-    { type: "choice", q: "2/2 のピザは どれだけ？", choices: ["まるごと1枚","半分","2枚","0枚"], answer: "まるごと1枚", hint: { text: "2等分した2切れ全部＝元の1枚に戻る。分子＝分母のときは1。", v: { k: "pizzas", list: [{ n: 2, d: 2 }] } } },
-    { type: "choice", q: "5/5 は いくつと同じ？", choices: ["1","5","0","1/5"], answer: "1", hint: { text: "5等分した5個分＝全部。分子＝分母は、いつでも1。", v: { k: "pizzas", list: [{ n: 5, d: 5 }] } } },
-    { type: "choice", q: "1/2 と 1/3、大きいのは？", choices: ["1/2","1/3","同じ大きさ","比べられない"], answer: "1/2", hint: { text: "分ける数が少ないほど、1切れは大きくなる。", v: { k: "pizzas", list: [{ n: 1, d: 2 }, { n: 1, d: 3 }], sep: "・" } } },
-    { type: "choice", q: "3/4 食べた。残りは？", choices: ["1/4","3/4","1/2","1"], answer: "1/4", hint: { text: "全体は4/4。そこから3/4をひく。", v: { k: "steps", lines: ["全体 ＝ 4/4", "4/4 − 3/4 ＝"] } } },
-    { type: "choice", q: "1 を 3等分した 1つ分は？", choices: ["1/3","3","1/2","3/1"], answer: "1/3", hint: { text: "3等分だから分母は3。その1個分。", v: { k: "pizzas", list: [{ n: 1, d: 3 }] } } },
-    { type: "choice", q: "1/4 が 3個分は？", choices: ["3/4","1/12","4/3","1/4"], answer: "3/4", hint: { text: "1/4を3切れ集める。分母はそのまま、分子が3に。", v: { k: "pizzas", list: [{ n: 3, d: 4 }] } } },
-  ],
-  f2: [
-    { type: "choice", q: "1/2 と同じ大きさは どれ？", choices: ["2/4","1/4","2/3","3/4"], answer: "2/4", hint: { text: "分子と分母に同じ数をかけても、大きさは変わらない。", v: { k: "pizzas", list: [{ n: 1, d: 2 }, { n: 2/4, d: 4 }] } } },
-    { type: "choice", q: "2/6 を約分すると？", choices: ["1/3","1/2","2/3","1/6"], answer: "1/3", hint: { text: "分子と分母を同じ数（2）で割る。", v: { k: "pizzas", list: [{ n: 2, d: 6 }, { n: 1, d: 3 }], sep: "→" } } },
-    { type: "choice", q: "3/4 と同じ大きさは どれ？", choices: ["6/8","3/8","4/6","6/12"], answer: "6/8", hint: { text: "分子と分母を2倍してみよう。", v: { k: "pizzas", list: [{ n: 3, d: 4 }, { n: 6, d: 8 }] } } },
-    { type: "choice", q: "4/8 を約分すると？", choices: ["1/2","2/8","4/4","1/4"], answer: "1/2", hint: { text: "分子も分母も4で割れる。", v: { k: "pizzas", list: [{ n: 4, d: 8 }, { n: 1, d: 2 }], sep: "→" } } },
-    { type: "choice", q: "1/3 と 1/4 を通分するとき、いちばん小さい分母は？", choices: ["12","7","24","4"], answer: "12", hint: { text: "3と4の両方の段（九九）に出てくる、いちばん小さい数。", v: { k: "steps", lines: ["3の段:3, 6, 9, 12…", "4の段:4, 8, 12…", "共通する最小の数は？"] } } },
-    { type: "choice", q: "6/9 を約分すると？", choices: ["2/3","1/3","3/4","1/2"], answer: "2/3", hint: { text: "分子も分母も3で割れる。", v: { k: "pizzas", list: [{ n: 6, d: 9 }, { n: 2, d: 3 }], sep: "→" } } },
-    { type: "choice", q: "2/3 と同じ大きさは どれ？", choices: ["4/6","2/6","3/4","4/5"], answer: "4/6", hint: { text: "分子と分母を2倍する。", v: { k: "pizzas", list: [{ n: 2, d: 3 }, { n: 4, d: 6 }] } } },
-    { type: "choice", q: "5/10 を約分すると？", choices: ["1/2","1/5","2/5","1/10"], answer: "1/2", hint: { text: "分子も分母も5で割れる。", v: { k: "steps", lines: ["5÷5＝1", "10÷5＝2"] } } },
-    { type: "choice", q: "1/2 と 1/6 を通分するとき、いちばん小さい分母は？", choices: ["6","12","8","2"], answer: "6", hint: { text: "2の段と6の段で、最初に共通する数。", v: { k: "steps", lines: ["2の段:2, 4, 6…", "6の段:6, 12…", "共通する最小の数は？"] } } },
-    { type: "choice", q: "8/12 を約分すると？", choices: ["2/3","3/4","1/2","2/12"], answer: "2/3", hint: { text: "分子も分母も4で割れる。", v: { k: "steps", lines: ["8÷4＝2", "12÷4＝3"] } } },
-  ],
-  f3: [
-    { type: "choice", q: "1/5 ＋ 2/5 ＝", choices: ["3/5","3/10","2/5","1/5"], answer: "3/5", hint: { text: "分母が同じときは、分子だけたす。分母はそのまま！", v: { k: "steps", lines: ["分子:1＋2＝3", "分母:5のまま"] } } },
-    { type: "choice", q: "3/7 − 1/7 ＝", choices: ["2/7","2/14","4/7","1/7"], answer: "2/7", hint: { text: "分子だけひき算する。", v: { k: "steps", lines: ["分子:3−1＝2", "分母:7のまま"] } } },
-    { type: "choice", q: "2/9 ＋ 5/9 ＝", choices: ["7/9","7/18","3/9","10/9"], answer: "7/9", hint: { text: "分子だけたす。", v: { k: "steps", lines: ["分子:2＋5＝7", "分母:9のまま"] } } },
-    { type: "choice", q: "5/8 − 1/8 ＝", choices: ["1/2","4/16","6/8","3/8"], answer: "1/2", hint: { text: "4/8になったら、最後に約分。", v: { k: "steps", lines: ["5/8 − 1/8 ＝ 4/8", "4/8 を約分すると？"] } } },
-    { type: "choice", q: "1/2 ＋ 1/4 ＝", choices: ["3/4","2/6","1/4","2/4"], answer: "3/4", hint: { text: "分母が違うので、まず通分する。", v: { k: "steps", lines: ["1/2 ＝ 2/4 に通分", "2/4 ＋ 1/4 ＝"] } } },
-    { type: "choice", q: "1/2 ＋ 1/3 ＝", choices: ["5/6","2/5","2/6","1/6"], answer: "5/6", hint: { text: "分母を6に通分してからたす。", v: { k: "steps", lines: ["1/2 ＝ 3/6 ， 1/3 ＝ 2/6", "3/6 ＋ 2/6 ＝"] } } },
-    { type: "choice", q: "2/3 − 1/6 ＝", choices: ["1/2","1/3","3/6","1/6"], answer: "1/2", hint: { text: "分母を6にそろえてから計算し、最後に約分。", v: { k: "steps", lines: ["2/3 ＝ 4/6 に通分", "4/6 − 1/6 ＝ 3/6", "3/6 を約分すると？"] } } },
-    { type: "choice", q: "1/6 ＋ 1/3 ＝", choices: ["1/2","2/9","1/3","2/3"], answer: "1/2", hint: { text: "1/3を6分の何になおす？計算後に約分も。", v: { k: "steps", lines: ["1/3 ＝ 2/6 に通分", "1/6 ＋ 2/6 ＝ 3/6", "3/6 を約分すると？"] } } },
-    { type: "choice", q: "3/4 − 1/2 ＝", choices: ["1/4","2/2","1/2","2/4"], answer: "1/4", hint: { text: "1/2を4分の何になおす？", v: { k: "steps", lines: ["1/2 ＝ 2/4 に通分", "3/4 − 2/4 ＝"] } } },
-    { type: "choice", q: "5/6 − 1/2 ＝", choices: ["1/3","4/4","2/6","1/2"], answer: "1/3", hint: { text: "1/2＝3/6。答えは約分できる。", v: { k: "steps", lines: ["1/2 ＝ 3/6 に通分", "5/6 − 3/6 ＝ 2/6", "2/6 を約分すると？"] } } },
-  ],
-  f4: [
-    { type: "choice", q: "1/2 × 1/3 ＝", choices: ["1/6","2/3","1/5","2/6"], answer: "1/6", hint: { text: "かけ算は、分子どうし・分母どうしをかけるだけ。", v: { k: "steps", lines: ["分子:1×1＝1", "分母:2×3＝6"] } } },
-    { type: "choice", q: "2/3 × 3/4 ＝", choices: ["1/2","6/7","5/12","2/4"], answer: "1/2", hint: { text: "計算したあと、約分を忘れずに。", v: { k: "steps", lines: ["2/3 × 3/4 ＝ 6/12", "6/12 を約分すると？"] } } },
-    { type: "choice", q: "1/4 × 2 ＝", choices: ["1/2","1/8","2/6","1/4"], answer: "1/2", hint: { text: "2は 2/1。分子どうしをかけて 2/4 → 約分。", v: { k: "steps", lines: ["1/4 × 2/1 ＝ 2/4", "2/4 を約分すると？"] } } },
-    { type: "choice", q: "2/5 × 1/2 ＝", choices: ["1/5","3/7","2/7","2/5"], answer: "1/5", hint: { text: "2/10になったら約分。", v: { k: "steps", lines: ["2/5 × 1/2 ＝ 2/10", "2/10 を約分すると？"] } } },
-    { type: "choice", q: "3/5 × 5/6 ＝", choices: ["1/2","8/11","15/11","3/6"], answer: "1/2", hint: { text: "15/30になったら約分。とちゅうで約分してもOK。", v: { k: "steps", lines: ["3/5 × 5/6 ＝ 15/30", "15/30 を約分すると？"] } } },
-    { type: "choice", q: "1/2 ÷ 1/4 ＝", choices: ["2","1/8","1/2","4"], answer: "2", hint: { text: "後ろの分数をひっくり返して、かけ算に変える。", v: { k: "flip", a: [1, 2], b: [1, 4] } } },
-    { type: "choice", q: "2/5 ÷ 2 ＝", choices: ["1/5","4/5","2/10","2/3"], answer: "1/5", hint: { text: "2は 2/1。ひっくり返して 1/2 をかける。計算後は約分！", v: { k: "flip", a: [2, 5], b: [2, 1] } } },
-    { type: "choice", q: "3/4 ÷ 1/2 ＝", choices: ["3/2","3/8","2/3","1/2"], answer: "3/2", hint: { text: "ひっくり返してかけると 6/4。最後に約分する。", v: { k: "flip", a: [3, 4], b: [1, 2] } } },
-    { type: "choice", q: "1/3 ÷ 1/6 ＝", choices: ["2","1/18","1/2","3"], answer: "2", hint: { text: "1/6をひっくり返して 6/1 をかける。", v: { k: "flip", a: [1, 3], b: [1, 6] } } },
-    { type: "choice", q: "5/6 ÷ 5 ＝", choices: ["1/6","25/6","1/5","5/6"], answer: "1/6", hint: { text: "×1/5 に変身。5/30になったら約分。", v: { k: "flip", a: [5, 6], b: [5, 1] } } },
-  ],
-  f5: [
-    { type: "choice", q: "4/9 ＋ 2/9 ＝", choices: ["2/3","1/3","2/9","8/9"], answer: "2/3", hint: { text: "6/9になったら約分！", v: { k: "steps", lines: ["4/9 ＋ 2/9 ＝ 6/9", "6/9 を約分すると？"] } } },
-    { type: "choice", q: "5/6 − 1/6 ＝", choices: ["2/3","4/12","1/6","5/6"], answer: "2/3", hint: { text: "4/6になったら約分！", v: { k: "steps", lines: ["5/6 − 1/6 ＝ 4/6", "4/6 を約分すると？"] } } },
-    { type: "choice", q: "1/4 ＋ 1/2 ＝", choices: ["3/4","2/6","1/8","2/4"], answer: "3/4", hint: { text: "1/2 を 2/4 に通分する。", v: { k: "steps", lines: ["1/2 ＝ 2/4", "1/4 ＋ 2/4 ＝"] } } },
-    { type: "choice", q: "1/3 × 1/2 ＝", choices: ["1/6","2/5","1/5","2/6"], answer: "1/6", hint: { text: "分子どうし・分母どうしをかける！", v: { k: "steps", lines: ["分子:1×1", "分母:3×2"] } } },
-    { type: "choice", q: "3/5 ÷ 3 ＝", choices: ["1/5","9/5","3/15","1/3"], answer: "1/5", hint: { text: "×1/3 に変身。3/15になったら約分！", v: { k: "flip", a: [3, 5], b: [3, 1] } } },
-    { type: "choice", q: "1/2 ÷ 1/3 ＝", choices: ["3/2","1/6","2/3","1/5"], answer: "3/2", hint: { text: "1/3 をひっくり返して ×3/1！", v: { k: "flip", a: [1, 2], b: [1, 3] } } },
-    { type: "choice", q: "2/4 を約分すると？", choices: ["1/2","2/2","1/4","4/2"], answer: "1/2", hint: { text: "分子も分母も2で割る。", v: { k: "pizzas", list: [{ n: 2, d: 4 }, { n: 1, d: 2 }], sep: "→" } } },
-    { type: "choice", q: "7/8 − 3/8 ＝", choices: ["1/2","1/4","3/8","5/8"], answer: "1/2", hint: { text: "4/8になったら約分！", v: { k: "steps", lines: ["7/8 − 3/8 ＝ 4/8", "4/8 を約分すると？"] } } },
-    { type: "choice", q: "2/3 × 1/4 ＝", choices: ["1/6","2/7","3/7","2/3"], answer: "1/6", hint: { text: "2/12になったら約分。", v: { k: "steps", lines: ["2/3 × 1/4 ＝ 2/12", "2/12 を約分すると？"] } } },
-    { type: "choice", q: "3/4 と同じ大きさは どれ？", choices: ["9/12","3/8","6/9","4/3"], answer: "9/12", hint: { text: "分子と分母を3倍してみよう。", v: { k: "steps", lines: ["3×3＝9", "4×3＝12"] } } },
-  ],
-};
-
-/* ================= ステージ定義 ================= */
-const STAGES = [
-  { id: "d1", quest: "d", num: 1, name: "小数とは？", type: "explore", desc: "バーで確かめよう" },
-  { id: "d2", quest: "d", num: 2, name: "たし算・ひき算（基本）", type: "quiz-input", desc: "くり上がり・くり下がりなし" },
-  { id: "d3", quest: "d", num: 3, name: "たし算（くり上がり）", type: "quiz-input", desc: "くり上がりあり" },
-  { id: "d4", quest: "d", num: 4, name: "ひき算（くり下がり）", type: "quiz-input", desc: "くり下がりあり" },
-  { id: "d5", quest: "d", num: 5, name: "かけ算", type: "quiz", desc: "右にそろえて筆算" },
-  { id: "d6", quest: "d", num: 6, name: "わり算", type: "quiz", desc: "小数点を動かして整数に" },
-  { id: "d7", quest: "d", num: 7, name: "ボスバトル", type: "boss", desc: "タイマー付き総合クイズ" },
-  { id: "f1", quest: "f", num: 1, name: "ピザを分けよう", type: "explore", desc: "分数の仕組み" },
-  { id: "f2", quest: "f", num: 2, name: "約分・通分", type: "quiz", desc: "同じ大きさを見つけろ" },
-  { id: "f3", quest: "f", num: 3, name: "たし算・ひき算", type: "quiz", desc: "分母をそろえて" },
-  { id: "f4", quest: "f", num: 4, name: "かけ算・わり算", type: "quiz", desc: "逆数のワザ" },
-  { id: "f5", quest: "f", num: 5, name: "ボスバトル", type: "boss", desc: "タイマー付き総合クイズ" },
-];
-const QUEST_META = {
-  d: { name: "小数クエスト", color: "#2E86DE", light: "#E3F2FF", grad: "linear-gradient(135deg,#4DA9FF,#2E86DE)", emoji: "🌊" },
-  f: { name: "分数クエスト", color: "#E8590C", light: "#FFF0E3", grad: "linear-gradient(135deg,#FFB25E,#E8590C)", emoji: "🍕" },
-};
-const BOSS_TIME = 120;
-
-/* ================= ピザSVG ================= */
-function Pizza({ den, num, size = 180 }) {
-  const cx = size / 2, cy = size / 2, r = size / 2 - 6;
-  const slices = [];
-  for (let i = 0; i < den; i++) {
-    const a0 = (i / den) * 2 * Math.PI - Math.PI / 2;
-    const a1 = ((i + 1) / den) * 2 * Math.PI - Math.PI / 2;
-    const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
-    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
-    const large = (a1 - a0) > Math.PI ? 1 : 0;
-    const d = den === 1
-      ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r} Z`
-      : `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`;
-    slices.push(
-      <path key={i} d={d}
-        fill={i < num ? "#FFB25E" : "#FFF4E0"}
-        stroke="#C9560F" strokeWidth="2" strokeLinejoin="round" />
+    const GlobalStyle = () => (
+      <style>{`
+        body { font-family: ${FONT}; }
+        @keyframes confettiFall {
+          0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(110vh) rotate(720deg); opacity: 0.8; }
+        }
+        @keyframes popIn {
+          0% { transform: scale(0.4); opacity: 0; }
+          70% { transform: scale(1.12); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes wiggle {
+          0%,100% { transform: rotate(-4deg); }
+          50% { transform: rotate(4deg); }
+        }
+        @keyframes floaty {
+          0%,100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes dropIn {
+          from { transform: translateY(-16px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes spinIn {
+          from { transform: rotate(-180deg) scale(0.6); opacity: 0.3; }
+          to { transform: rotate(0deg) scale(1); opacity: 1; }
+        }
+      `}</style>
     );
-  }
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
-      aria-label={`ピザ ${den}等分中 ${num}切れ`}>
-      <circle cx={cx} cy={cy} r={r + 3} fill="#E8590C" />
-      {slices}
-      {Array.from({ length: Math.min(num, 12) }).map((_, i) => {
-        const ang = ((i + 0.5) / den) * 2 * Math.PI - Math.PI / 2;
-        return i < num ? (
-          <circle key={`p${i}`} cx={cx + r * 0.55 * Math.cos(ang)} cy={cy + r * 0.55 * Math.sin(ang)}
-            r={size * 0.028} fill="#E6533C" />
-        ) : null;
-      })}
-    </svg>
-  );
-}
 
-/* ================= キーパッド ================= */
-function Keypad({ value, onChange, onSubmit, disabled }) {
-  const press = (k) => {
-    if (disabled) return;
-    if (k === "del") return onChange(value.slice(0, -1));
-    if (k === "." && value.includes(".")) return;
-    if (value.length >= 6) return;
-    onChange(value + k);
-  };
-  const keys = ["7","8","9","4","5","6","1","2","3","0","."];
-  return (
-    <div className="w-full max-w-xs mx-auto">
-      <div className="grid grid-cols-3 gap-2">
-        {keys.map(k => (
-          <button key={k} onClick={() => press(k)} disabled={disabled}
-            className="rounded-2xl bg-white text-xl font-bold py-2.5 shadow active:scale-95 transition-transform border-b-4 border-sky-200 text-sky-800 focus:outline-none">
-            {k}
-          </button>
-        ))}
-        <button onClick={() => press("del")} disabled={disabled} aria-label="1文字消す"
-          className="rounded-2xl bg-rose-100 py-2.5 shadow active:scale-95 border-b-4 border-rose-200 flex items-center justify-center text-rose-600 focus:outline-none">
-          <Delete size={22} />
-        </button>
-      </div>
-      <button onClick={onSubmit} disabled={disabled || value === ""}
-        className="mt-3 w-full rounded-2xl py-2.5 text-lg font-extrabold text-white shadow-lg active:scale-95 transition-transform disabled:opacity-40 focus:outline-none"
-        style={{ background: "linear-gradient(135deg,#34D399,#059669)" }}>
-        答える！
-      </button>
-    </div>
-  );
-}
-
-/* ================= 共通ヘッダー（サイズを縮小） ================= */
-function StageHeader({ stage, meta, hearts, onExit }) {
-  return (
-    <div className="sticky top-0 z-20 px-4 py-2 flex items-center justify-between shadow-md" style={{ background: meta.grad }}>
-      <button onClick={onExit} className="flex items-center gap-1 text-white text-xs font-bold bg-white/20 rounded-full px-2.5 py-1.5 active:scale-95 focus:outline-none">
-        <ChevronLeft size={16} /> マップ
-      </button>
-      <div className="text-white font-extrabold text-sm drop-shadow text-center">
-        {meta.emoji} 舞台{stage.num}：{stage.name}
-      </div>
-      {hearts != null ? (
-        <div className="flex items-center gap-0.5" aria-label={`残りライフ ${hearts}`}>
-          {[0,1,2].map(i => (
-            <Heart key={i} size={18} fill={i < hearts ? "#FF5D7A" : "transparent"}
-              color={i < hearts ? "#FF5D7A" : "#FFFFFF88"} />
-          ))}
-        </div>
-      ) : <div className="w-14" />}
-    </div>
-  );
-}
-
-/* ================= クイズ画面 ================= */
-function Quiz({ stage, questions, onClear, onExit, addXp }) {
-  const isBoss = stage.type === "boss";
-  const meta = QUEST_META[stage.quest];
-  const [order] = useState(() => isBoss ? [...questions].sort(() => Math.random() - 0.5) : questions);
-  const [idx, setIdx] = useState(0);
-  const [hearts, setHearts] = useState(3);
-  const [showHint, setShowHint] = useState(false);
-  const [feedback, setFeedback] = useState(null);
-  const [locked, setLocked] = useState(false);
-  const [input, setInput] = useState("");
-  const [confetti, setConfetti] = useState(0);
-  const [mark, setMark] = useState(null);
-  const [wrongPick, setWrongPick] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(isBoss ? BOSS_TIME : null);
-  const [timeUp, setTimeUp] = useState(false);
-  const [earned, setEarned] = useState(0);
-  const doneRef = useRef(false);
-  const ngTimerRef = useRef(null);
-
-  const q = order[idx];
-  const perQ = isBoss ? 15 : 10;
-
-  // 選択肢の回答を偏らせず、アトランダムに並び替えるステート
-  const [shuffledChoices, setShuffledChoices] = useState([]);
-
-  useEffect(() => {
-    if (q && q.choices) {
-      setShuffledChoices([...q.choices].sort(() => Math.random() - 0.5));
-    } else {
-      setShuffledChoices([]);
-    }
-  }, [q, idx]);
-
-  useEffect(() => {
-    if (!isBoss || timeUp || doneRef.current) return;
-    if (timeLeft <= 0) { setTimeUp(true); return; }
-    const t = setTimeout(() => setTimeLeft(s => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [timeLeft, isBoss, timeUp]);
-
-  useEffect(() => () => clearTimeout(ngTimerRef.current), []);
-
-  const next = useCallback((gained) => {
-    if (idx + 1 >= order.length) {
-      doneRef.current = true;
-      onClear(gained);
-    } else {
-      setIdx(i => i + 1);
-      setShowHint(false);
-      setFeedback(null);
-      setInput("");
-      setLocked(false);
-      setMark(null);
-      setWrongPick(null);
-    }
-  }, [idx, order.length, onClear]);
-
-  const judge = (userAnswer) => {
-    if (locked || timeUp) return;
-    let ok;
-    if (q.type === "input") {
-      const v = parseFloat(userAnswer);
-      ok = !Number.isNaN(v) && Math.abs(v - q.answer) < 1e-9;
-    } else {
-      ok = userAnswer === q.answer;
-    }
-    if (ok) {
-      const gained = earned + perQ;
-      setEarned(gained);
-      addXp(perQ);
-      setFeedback({ ok: true, msg: pick(PRAISE) });
-      setMark("ok");
-      setConfetti(c => c + 1);
-      setLocked(true);
-      setTimeout(() => next(gained), 1400);
-    } else {
-      const h = Math.max(0, hearts - 1);
-      setHearts(h);
-      setFeedback({ ok: false, msg: h === 0 ? "大丈夫！詳しいヒントを出したよ。じっくり考えよう。" : pick(ENCOURAGE) });
-      setMark("ng");
-      if (q.type === "choice") setWrongPick(userAnswer);
-      clearTimeout(ngTimerRef.current);
-      ngTimerRef.current = setTimeout(() => { setMark(null); setWrongPick(null); }, 900);
-      if (h === 0) setShowHint(true);
-      setInput("");
-    }
-  };
-
-  const retryBoss = () => {
-    setIdx(0); setHearts(3); setShowHint(false); setFeedback(null);
-    setLocked(false); setInput(""); setTimeLeft(BOSS_TIME); setTimeUp(false); setEarned(0);
-    setMark(null); setWrongPick(null);
-  };
-
-  const renderQuestion = () => {
-    if (q.disp?.hissan) {
-      const h = q.disp.hissan;
+    /* ================= 紙吹雪 ================= */
+    const CONFETTI_COLORS = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#B983FF","#FF9F45","#3EDBF0"];
+    function Confetti({ trigger }) {
+      const [pieces, setPieces] = useState([]);
+      useEffect(() => {
+        if (!trigger) return;
+        const arr = Array.from({ length: 44 }, (_, i) => ({
+          id: `${trigger}-${i}`,
+          left: Math.random() * 100,
+          delay: Math.random() * 0.35,
+          dur: 1.4 + Math.random() * 1.1,
+          size: 7 + Math.random() * 8,
+          color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+          round: Math.random() > 0.5,
+        }));
+        setPieces(arr);
+        const t = setTimeout(() => setPieces([]), 2600);
+        return () => clearTimeout(t);
+      }, [trigger]);
+      if (pieces.length === 0) return null;
       return (
-        <div className="text-center py-1">
-          <div className="text-[10px] font-bold text-slate-400 mb-1">
-            {h.op === "×" ? "かけ算の筆算：右にそろえる" : "筆算：小数点をタテにそろえる"}
-          </div>
-          <Hissan a={h.a} b={h.b} op={h.op} />
+        <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 60 }} aria-hidden="true">
+          {pieces.map(p => (
+            <div key={p.id} style={{
+              position: "absolute", top: 0, left: `${p.left}%`,
+              width: p.size, height: p.size * (p.round ? 1 : 0.6),
+              background: p.color, borderRadius: p.round ? "50%" : "2px",
+              animation: `confettiFall ${p.dur}s ${p.delay}s ease-in forwards`,
+            }} />
+          ))}
         </div>
       );
     }
-    if (q.disp?.div) {
-      const d = q.disp.div;
+
+    /* ================= 分数・数式の表示 ================= */
+    function Frac({ n, d, color }) {
       return (
-        <div className="text-center py-1">
-          <div className="text-[10px] font-bold text-slate-400 mb-1">わり算の筆算</div>
-          <DivHissan sor={d.sor} end={d.end} />
-        </div>
+        <span className="inline-flex flex-col items-center align-middle mx-0.5" style={{ lineHeight: 1.0, color }}>
+          <span className="px-0.5">{n}</span>
+          <span className="w-full border-t-2 border-current" />
+          <span className="px-0.5">{d}</span>
+        </span>
       );
     }
-    return (
-      <div className="text-center text-xl sm:text-2xl font-extrabold text-slate-800 py-2">
-        <M t={q.q} />
-      </div>
-    );
-  };
+    function FracN({ n, d, nCls = "", dCls = "" }) {
+      return (
+        <span className="inline-flex flex-col items-center align-middle mx-0.5" style={{ lineHeight: 1.0 }}>
+          <span className={`px-0.5 rounded transition-colors duration-300 ${nCls}`}>{n}</span>
+          <span className="w-full border-t-2 border-current" />
+          <span className={`px-0.5 rounded transition-colors duration-300 ${dCls}`}>{d}</span>
+        </span>
+      );
+    }
+    function M({ t, className = "" }) {
+      const parts = String(t).split(" ");
+      return (
+        <span className={`inline-flex items-center flex-wrap justify-center gap-0.5 ${className}`}>
+          {parts.map((p, i) => {
+            const m = p.match(/^(\d+)\/(\d+)$/);
+            if (m) return <Frac key={i} n={m[1]} d={m[2]} />;
+            return <span key={i}>{p}</span>;
+          })}
+        </span>
+      );
+    }
 
-  const choiceCls = (c) => {
-    if (locked && c === q.answer) return "bg-emerald-100 border-emerald-400 text-emerald-700 ring-4 ring-emerald-200";
-    if (wrongPick === c) return "bg-rose-100 border-rose-400 text-rose-600";
-    return "bg-slate-50 hover:bg-amber-50 border-slate-200 text-slate-800";
-  };
-
-  return (
-    <div className="min-h-screen pb-6" style={{ fontFamily: FONT, background: `linear-gradient(180deg, ${meta.light}, #FFFFFF)` }}>
-      <Confetti trigger={confetti} />
-      <StageHeader stage={stage} meta={meta} hearts={hearts} onExit={onExit} />
-
-      <div className="max-w-xl mx-auto px-4 mt-2">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 h-3 bg-white rounded-full shadow-inner overflow-hidden border border-black/5">
-            <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${(idx / order.length) * 100}%`, background: meta.grad }} />
-          </div>
-          <div className="text-xs font-bold" style={{ color: meta.color }}>
-            {idx + 1} / {order.length}
-          </div>
-          {isBoss && (
-            <div className={`flex items-center gap-1 text-xs font-extrabold px-2.5 py-0.5 rounded-full text-white ${timeLeft <= 20 ? "bg-rose-500" : "bg-slate-700"}`}
-              style={timeLeft <= 20 ? { animation: "wiggle 0.5s infinite" } : {}}>
-              <Timer size={14} /> {timeLeft}
-            </div>
+    function Digits({ s }) {
+      return (
+        <span style={{ fontFamily: MONO, whiteSpace: "pre" }}>
+          {String(s).split("").map((c, i) =>
+            c === "." ? <span key={i} className="text-rose-500 font-extrabold">.</span> : <span key={i}>{c}</span>
           )}
-        </div>
-      </div>
+        </span>
+      );
+    }
+    function alignDecimals(nums) {
+      const parts = nums.map(s => {
+        const [i, f = ""] = String(s).split(".");
+        return { i, f };
+      });
+      const maxI = Math.max(...parts.map(p => p.i.length));
+      const maxF = Math.max(...parts.map(p => p.f.length));
+      return parts.map(p => {
+        let s = p.i.padStart(maxI, " ");
+        if (maxF > 0) s += p.f.length > 0 ? "." + p.f.padEnd(maxF, " ") : " " + "".padEnd(maxF, " ");
+        return s;
+      });
+    }
+    function alignRight(nums) {
+      const L = Math.max(...nums.map(s => String(s).length));
+      return nums.map(s => String(s).padStart(L, " "));
+    }
 
-      {timeUp ? (
-        <div className="max-w-xl mx-auto px-4 mt-6 text-center" style={{ animation: "popIn 0.4s" }}>
-          <div className="bg-white rounded-3xl shadow-xl p-6">
-            <div className="text-4xl mb-2">⏰</div>
-            <div className="text-xl font-extrabold text-slate-800 mb-1">時間切れ！</div>
-            <p className="text-slate-600 text-sm font-bold mb-4">ボスは手ごわい。もう一度挑戦しよう！</p>
-            <button onClick={retryBoss}
-              className="rounded-2xl px-6 py-2 text-lg font-extrabold text-white shadow-lg active:scale-95"
-              style={{ background: meta.grad }}>
-              リベンジする！
+    /* ================= 筆算（たて書き：隙間削減） ================= */
+    function Hissan({ a, b, op, ans = "", size = "text-3xl" }) {
+      const [A, B] = op === "×" ? alignRight([a, b]) : alignDecimals([a, b]);
+      return (
+        <div className={`inline-grid ${size} font-bold text-slate-800`}
+          style={{ gridTemplateColumns: "auto auto", lineHeight: 1.1 }}>
+          <span />
+          <span className="text-right"><Digits s={A} /></span>
+          <span className="pr-2 text-slate-500">{op}</span>
+          <span className="text-right"><Digits s={B} /></span>
+          <span className="col-span-2 text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
+            {ans === "" ? "\u00A0" : <Digits s={ans} />}
+          </span>
+        </div>
+      );
+    }
+    function DivHissan({ sor, end, ans = "", size = "text-3xl" }) {
+      return (
+        <div className={`inline-grid ${size} font-bold text-slate-800`}
+          style={{ gridTemplateColumns: "auto auto", lineHeight: 1.1 }}>
+          <span />
+          <span className="text-center pb-0.5 text-emerald-600">{ans === "" ? "\u00A0" : <Digits s={ans} />}</span>
+          <span className="pr-1 pt-1"><Digits s={sor} /></span>
+          <span className="pt-1 pl-3 pr-2"
+            style={{ borderTop: "4px solid #334155", borderLeft: "4px solid #334155", borderTopLeftRadius: 10 }}>
+            <Digits s={end} />
+          </span>
+        </div>
+      );
+    }
+
+    /* ================= ヒント用のビジュアル部品 ================= */
+    function BarViz({ v }) {
+      return (
+        <div>
+          <div className="flex h-10 w-full max-w-sm mx-auto rounded-xl overflow-hidden border-4 border-sky-600 bg-sky-50">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="flex-1 border-r-2 border-sky-200 last:border-r-0"
+                style={{ background: i < v ? "linear-gradient(180deg,#7CD4FF,#2E86DE)" : "transparent" }} />
+            ))}
+          </div>
+          <div className="text-center mt-1 text-xs font-bold text-sky-700">0.1 が {v} 個分 ＝ {v === 10 ? "1" : `0.${v}`}</div>
+        </div>
+      );
+    }
+    function ShiftViz({ from, to, dir, n }) {
+      const right = dir === "right";
+      return (
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <span className="text-2xl font-extrabold text-slate-800"><Digits s={from} /></span>
+          <span className={`flex flex-col items-center font-bold text-[10px] ${right ? "text-emerald-600" : "text-sky-600"}`}>
+            {right ? <Icon name="arrowRight" size={24} /> : <Icon name="arrowLeft" size={24} />}
+            小数点を{right ? "右" : "左"}へ{n}つ
+          </span>
+          <span className="text-2xl font-extrabold text-emerald-600"><Digits s={to} /></span>
+        </div>
+      );
+    }
+    function StepsViz({ lines }) {
+      return (
+        <div className="space-y-1">
+          {lines.map((l, i) => (
+            <div key={i} className="flex items-center gap-2 text-base font-bold text-slate-700">
+              <span className="w-5 h-5 shrink-0 rounded-full bg-amber-400 text-white text-[10px] flex items-center justify-center font-extrabold">{i + 1}</span>
+              <M t={l} />
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function PizzasViz({ list, sep = "＝" }) {
+      return (
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          {list.map((p, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <span className="text-2xl font-extrabold text-slate-500">{sep}</span>}
+              <div className="flex flex-col items-center">
+                <Pizza den={p.d} num={p.n} size={80} />
+                <span className="text-lg font-extrabold text-orange-700 mt-0.5"><Frac n={p.n} d={p.d} /></span>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+    function FlipViz({ a, b }) {
+      return (
+        <div className="flex flex-col items-center gap-1">
+          <div className="flex items-center justify-center gap-1 text-2xl font-extrabold text-slate-800">
+            <Frac n={a[0]} d={a[1]} /><span>÷</span><Frac n={b[0]} d={b[1]} />
+            <Icon name="arrowRight" className="text-slate-400" size={20} />
+            <Frac n={a[0]} d={a[1]} /><span>×</span><Frac n={b[1]} d={b[0]} color="#E8590C" />
+          </div>
+          <div className="flex items-center gap-1 text-xs font-bold text-orange-700">
+            <Icon name="refreshCw" size={14} /> 後ろの分数をひっくり返してかけ算に！
+          </div>
+        </div>
+      );
+    }
+    function HintVisual({ v }) {
+      if (!v) return null;
+      const box = "mt-2 flex justify-center";
+      switch (v.k) {
+        case "bar": return <div className={box}><BarViz v={v.v} /></div>;
+        case "hissan": return <div className={box}><Hissan a={v.a} b={v.b} op={v.op} ans={v.ans ?? ""} size="text-2xl" /></div>;
+        case "div": return <div className={box}><DivHissan sor={v.sor} end={v.end} ans={v.ans ?? ""} size="text-2xl" /></div>;
+        case "shift": return <div className={box}><ShiftViz {...v} /></div>;
+        case "steps": return <div className="mt-2"><StepsViz lines={v.lines} /></div>;
+        case "pizzas": return <div className={box}><PizzasViz list={v.list} sep={v.sep} /></div>;
+        case "flip": return <div className={box}><FlipViz a={v.a} b={v.b} /></div>;
+        default: return null;
+      }
+    }
+
+    /* ================= ステップ再生プレイヤー ================= */
+    function StepPlayer({ captions, children }) {
+      const [s, setS] = useState(0);
+      const last = captions.length - 1;
+      return (
+        <div className="w-full">
+          <div className="flex justify-center items-center py-2" style={{ minHeight: 100 }}>
+            {children(s)}
+          </div>
+          <div key={s} className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-center font-bold text-sm text-slate-700 animate-[popIn_0.3s_ease]">
+            {captions[s]}
+          </div>
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <button onClick={() => setS(v => Math.max(0, v - 1))} disabled={s === 0} aria-label="前のステップ"
+              className="w-9 h-9 rounded-full bg-slate-100 border-b-2 border-slate-200 flex items-center justify-center text-slate-500 active:scale-90 disabled:opacity-30 focus:outline-none">
+              <Icon name="chevronLeft" size={20} />
+            </button>
+            <div className="flex gap-1">
+              {captions.map((_, i) => (
+                <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === s ? "bg-amber-500" : "bg-slate-300"}`} />
+              ))}
+            </div>
+            <button onClick={() => setS(v => (v === last ? 0 : v + 1))} aria-label={s === last ? "はじめから" : "次のステップ"}
+              className="h-9 px-3 rounded-full text-white font-bold text-xs flex items-center gap-1 shadow active:scale-95 focus:outline-none"
+              style={{ background: "linear-gradient(135deg,#FBBF24,#F59E0B)" }}>
+              {s === last ? <><Icon name="rotateCcw" size={14} /> 最初から</> : <>次へ <Icon name="chevronRight" size={16} /></>}
             </button>
           </div>
         </div>
-      ) : (
-        <div className="max-w-xl mx-auto px-4 mt-3">
-          <div className="relative bg-white rounded-3xl shadow-xl p-5 border-b-4" style={{ borderColor: meta.color, animation: "popIn 0.35s" }}>
-            {mark && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ zIndex: 10 }} aria-hidden="true">
-                {mark === "ok" ? (
-                  <div className="w-28 h-28 rounded-full"
-                    style={{ border: "12px solid rgba(16,185,129,0.85)", animation: "popIn 0.35s" }} />
+      );
+    }
+
+    function DemoAddSubNoCarry() {
+      return (
+        <StepPlayer captions={[
+          "小数点をタテにそろえて書く。点線の上に点が並ぶ",
+          "右の位から計算する：3＋4＝7",
+          "小数点を、そのまま真下におろす",
+          "一の位は 0＋0＝0。答えは 0.7！",
+        ]}>
+          {(s) => (
+            <div className="relative pl-8 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
+              <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-300" style={{ right: "1.45ch" }} />
+              <div className="text-right">
+                <span>0</span><span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>3</span>
+              </div>
+              <div className="text-right relative">
+                <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>＋</span>
+                <span>0</span><span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>4</span>
+              </div>
+              <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>0</span>
+                <span className="text-rose-500 font-extrabold inline-block"
+                  style={{ opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "dropIn 0.5s" : "none" }}>.</span>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>7</span>
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoCarry() {
+      return (
+        <StepPlayer captions={[
+          "まずは同じ：小数点をタテにそろえる",
+          "5＋7＝12。「2」を書いて…",
+          "「1」は一の位へくり上げる！",
+          "くり上げた1があるので、一の位は 1",
+          "小数点をおろして…答えは 1.2！",
+        ]}>
+          {(s) => (
+            <div className="relative pl-8 pt-6 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
+              <div className="absolute bottom-0 border-l-2 border-dashed border-rose-300" style={{ right: "1.45ch", top: "1.5rem" }} />
+              <span className="absolute text-lg font-extrabold text-rose-500"
+                style={{ right: "2.35ch", top: "0.2rem", opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "popIn 0.4s" : "none" }}>
+                1
+              </span>
+              <div className="text-right">
+                <span className={`rounded transition-colors ${s === 3 ? "bg-amber-200" : ""}`}>0</span>
+                <span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>5</span>
+              </div>
+              <div className="text-right relative">
+                <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>＋</span>
+                <span className={`rounded transition-colors ${s === 3 ? "bg-amber-200" : ""}`}>0</span>
+                <span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : ""}`}>7</span>
+              </div>
+              <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>1</span>
+                <span className="text-rose-500 font-extrabold inline-block"
+                  style={{ opacity: s >= 4 ? 1 : 0, animation: s === 4 ? "dropIn 0.5s" : "none" }}>.</span>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>2</span>
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoBorrow() {
+      return (
+        <StepPlayer captions={[
+          "小数点をタテにそろえる",
+          "4から6はひけない…",
+          "一の位から1借りる（くり下げ）。1は0になり、4は14に！",
+          "14−6＝8",
+          "一の位は 0−0＝0。小数点をおろして、答えは 0.8！",
+        ]}>
+          {(s) => (
+            <div className="relative pl-8 pt-6 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
+              <div className="absolute bottom-0 border-l-2 border-dashed border-rose-300" style={{ right: "1.45ch", top: "1.5rem" }} />
+              <span className="absolute text-base font-extrabold text-rose-500"
+                style={{ right: "2.45ch", top: "0.3rem", opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "popIn 0.4s" : "none" }}>0</span>
+              <span className="absolute text-base font-extrabold text-rose-500"
+                style={{ right: "0.1ch", top: "0.3rem", opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "popIn 0.4s" : "none" }}>14</span>
+              <div className="text-right">
+                <span className={`transition-all duration-300 ${s >= 2 ? "line-through opacity-40" : ""}`}>1</span>
+                <span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 || s === 3 ? "bg-amber-200" : ""}`}>4</span>
+              </div>
+              <div className="text-right relative">
+                <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>−</span>
+                <span>0</span>
+                <span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 || s === 3 ? "bg-amber-200" : ""}`}>6</span>
+              </div>
+              <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600">
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 4 ? 1 : 0 }}>0</span>
+                <span className="text-rose-500 font-extrabold inline-block"
+                  style={{ opacity: s >= 4 ? 1 : 0, animation: s === 4 ? "dropIn 0.5s" : "none" }}>.</span>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>8</span>
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DotSlide({ chars, dotPos, dotOpacity = 1, hidden = [], cw = 32 }) {
+      return (
+        <div className="relative inline-flex pb-1" style={{ fontFamily: MONO }}>
+          {chars.map((c, i) => (
+            <span key={i} className="text-center text-3xl font-extrabold text-slate-800 transition-opacity duration-500"
+              style={{ width: cw, opacity: hidden.includes(i) ? 0 : 1 }}>{c}</span>
+          ))}
+          <span className="absolute text-3xl font-extrabold text-rose-500"
+            style={{ left: dotPos * cw - 6, bottom: -2, opacity: dotOpacity, transition: "left 0.7s, opacity 0.7s" }}>.</span>
+        </div>
+      );
+    }
+
+    function DemoShiftX10() {
+      return (
+        <StepPlayer captions={[
+          "2.5 を10倍すると、どうなる？",
+          "小数点が右へ1つジャンプ！",
+          "一番右に来た小数点は書かなくてOK。答えは 25！",
+        ]}>
+          {(s) => (
+            <div className="flex items-center gap-3">
+              <DotSlide chars={["2","5"]} dotPos={s >= 1 ? 2 : 1} dotOpacity={s >= 2 ? 0 : 1} />
+              <span className="text-xl font-extrabold text-emerald-600 transition-opacity duration-500"
+                style={{ opacity: s >= 2 ? 1 : 0 }}>＝ 25</span>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+    function DemoShiftDiv10() {
+      return (
+        <StepPlayer captions={[
+          "3 は「3.」と考えられる（小数点は一番右にかくれている）",
+          "÷10 で小数点が左へ1つ。空いた場所には 0 が入る",
+          "答えは 0.3！",
+        ]}>
+          {(s) => (
+            <div className="flex items-center gap-3">
+              <DotSlide chars={["0","3"]} dotPos={s >= 1 ? 1 : 2} dotOpacity={s >= 1 ? 1 : 0.35} hidden={s >= 1 ? [] : [0]} />
+              <span className="text-xl font-extrabold text-emerald-600 transition-opacity duration-500"
+                style={{ opacity: s >= 2 ? 1 : 0 }}>＝ 0.3</span>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoMultRight() {
+      return (
+        <StepPlayer captions={[
+          "かけ算の筆算は「右にそろえて」書く。小数点はそろえなくてOK！",
+          "小数点を気にせず計算：2×3＝6",
+          "小数点の右にある数字を数える：0.2で1個＋0.3で1個＝合計2個",
+          "答えの右から2個分の場所に小数点。答えは 0.06！",
+        ]}>
+          {(s) => (
+            <div className="relative pl-8 text-3xl font-bold text-slate-800" style={{ fontFamily: MONO, lineHeight: 1.1 }}>
+              <div className="text-right" style={{ whiteSpace: "pre" }}>
+                <span> 0</span><span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : s === 2 ? "bg-orange-200 underline decoration-2 decoration-orange-500" : ""}`}>2</span>
+              </div>
+              <div className="text-right relative" style={{ whiteSpace: "pre" }}>
+                <span className="absolute text-slate-500" style={{ left: "-1.6ch" }}>×</span>
+                <span> 0</span><span className="text-rose-500 font-extrabold">.</span>
+                <span className={`rounded transition-colors ${s === 1 ? "bg-amber-200" : s === 2 ? "bg-orange-200 underline decoration-2 decoration-orange-500" : ""}`}>3</span>
+              </div>
+              <div className="text-right border-t-4 border-slate-700 pt-0.5 text-emerald-600" style={{ whiteSpace: "pre" }}>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>0</span>
+                <span className="text-rose-500 font-extrabold inline-block"
+                  style={{ opacity: s >= 3 ? 1 : 0, animation: s === 3 ? "dropIn 0.5s" : "none" }}>.</span>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 3 ? 1 : 0 }}>0</span>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>6</span>
+              </div>
+              <div className="absolute -right-2 top-4 text-[10px] font-extrabold text-orange-600 transition-opacity duration-500"
+                style={{ opacity: s === 2 ? 1 : 0, fontFamily: FONT, lineHeight: 1.0 }}>←1個<br />←1個</div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoDivMove() {
+      return (
+        <StepPlayer captions={[
+          "1.2÷0.4 …小数のままでは割りにくい",
+          "両方の小数点を右へ1つ動かす（＝両方を10倍）。4 と 12 に変身！",
+          "12÷4＝3。変身しても答えは同じ！",
+        ]}>
+          {(s) => (
+            <div className="inline-grid" style={{ gridTemplateColumns: "auto auto" }}>
+              <span />
+              <span className="text-center pb-0.5 text-3xl font-extrabold text-emerald-600"
+                style={{ opacity: s >= 2 ? 1 : 0, animation: s === 2 ? "dropIn 0.5s" : "none" }}>3</span>
+              <div className="pr-1 pt-1">
+                <DotSlide chars={["0","4"]} cw={28} dotPos={s >= 1 ? 2 : 1} dotOpacity={s >= 1 ? 0 : 1} hidden={s >= 1 ? [0] : []} />
+              </div>
+              <div className="pt-1 pl-2 pr-2"
+                style={{ borderTop: "4px solid #334155", borderLeft: "4px solid #334155", borderTopLeftRadius: 10 }}>
+                <DotSlide chars={["1","2"]} cw={28} dotPos={s >= 1 ? 2 : 1} dotOpacity={s >= 1 ? 0 : 1} />
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function FracBar({ fills, lines, width = 220, height = 36 }) {
+      return (
+        <div className="relative rounded-xl border-4 border-slate-500 overflow-hidden bg-white" style={{ width, height }}>
+          <div className="flex h-full">
+            {fills.map((f, i) => (
+              <div key={i} className="h-full transition-all duration-700"
+                style={{ width: `${(f.on ? f.w : 0) * 100}%`, background: f.color }} />
+            ))}
+          </div>
+          {lines.map((l, i) => (
+            <div key={i} className="absolute top-0 bottom-0 bg-slate-500 transition-opacity duration-700"
+              style={{ left: `${l.p * 100}%`, width: 2, opacity: l.on ? 1 : 0 }} />
+          ))}
+        </div>
+      );
+    }
+
+    function DemoYakubun() {
+      return (
+        <StepPlayer captions={[
+          "2/4 ＝ 4等分のうち2個分（オレンジ）",
+          "2個ずつまとめる（分子・分母を2で割る）。しきりが消えても…",
+          "オレンジの量はそのまま！ 2/4 ＝ 1/2。これが約分",
+        ]}>
+          {(s) => (
+            <div className="flex flex-col items-center gap-1">
+              <FracBar
+                fills={[{ w: 0.5, color: "linear-gradient(180deg,#FFB25E,#E8590C)", on: true }]}
+                lines={[{ p: 0.25, on: s < 1 }, { p: 0.5, on: true }, { p: 0.75, on: s < 1 }]} />
+              <div className="relative h-8 text-xl font-extrabold text-orange-700">
+                <span className="absolute left-1/2 -translate-x-1/2 transition-opacity duration-500" style={{ opacity: s < 2 ? 1 : 0 }}><Frac n="2" d="4" /></span>
+                <span className="absolute left-1/2 -translate-x-1/2 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}><Frac n="1" d="2" /></span>
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoTsubun() {
+      const sixth = (i) => i / 6;
+      return (
+        <StepPlayer captions={[
+          "1/2 と 1/3。分母が違うと、このままではたせない…",
+          "どちらも「6等分」に切り直す（通分）→ 3/6 と 2/6 に！",
+          "分母がそろった！ 3/6 ＋ 2/6 ＝ 5/6",
+        ]}>
+          {(s) => (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-2">
+                <FracBar width={180} height={30}
+                  fills={[{ w: 1 / 2, color: "linear-gradient(180deg,#FFB25E,#E8590C)", on: true }]}
+                  lines={[{ p: 0.5, on: true }, { p: sixth(1), on: s >= 1 }, { p: sixth(2), on: s >= 1 }, { p: sixth(4), on: s >= 1 }, { p: sixth(5), on: s >= 1 }]} />
+                <span className="text-lg font-extrabold text-orange-700 w-8 text-center">
+                  {s >= 1 ? <Frac n="3" d="6" /> : <Frac n="1" d="2" />}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <FracBar width={180} height={30}
+                  fills={[{ w: 1 / 3, color: "linear-gradient(180deg,#7CD4FF,#2E86DE)", on: true }]}
+                  lines={[{ p: sixth(2), on: true }, { p: sixth(4), on: true }, { p: sixth(1), on: s >= 1 }, { p: sixth(3), on: s >= 1 }, { p: sixth(5), on: s >= 1 }]} />
+                <span className="text-lg font-extrabold text-sky-700 w-8 text-center">
+                  {s >= 1 ? <Frac n="2" d="6" /> : <Frac n="1" d="3" />}
+                </span>
+              </div>
+              <div className="text-lg font-extrabold text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}>
+                <M t="3/6 ＋ 2/6 ＝ 5/6" />
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoFracAddSame() {
+      return (
+        <StepPlayer captions={[
+          "まず 1/4（オレンジ）",
+          "そこに 2/4（青）をたすと…",
+          "合わせて 3/4！分母はそのまま、分子だけ 1＋2＝3",
+        ]}>
+          {(s) => (
+            <div className="flex flex-col items-center gap-1">
+              <FracBar
+                fills={[
+                  { w: 0.25, color: "linear-gradient(180deg,#FFB25E,#E8590C)", on: true },
+                  { w: 0.5, color: "linear-gradient(180deg,#7CD4FF,#2E86DE)", on: s >= 1 },
+                ]}
+                lines={[{ p: 0.25, on: true }, { p: 0.5, on: true }, { p: 0.75, on: true }]} />
+              <div className="text-xl font-extrabold text-slate-700 flex items-center gap-0.5">
+                <span className="text-orange-700"><Frac n="1" d="4" /></span>
+                <span className="transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}>＋</span>
+                <span className="text-sky-700 transition-opacity duration-500" style={{ opacity: s >= 1 ? 1 : 0 }}><Frac n="2" d="4" /></span>
+                <span className="text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}>＝</span>
+                <span className="text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}><Frac n="3" d="4" /></span>
+              </div>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoFracMul() {
+      return (
+        <StepPlayer captions={[
+          "分子どうしをかける：1×1＝1",
+          "分母どうしをかける：2×3＝6",
+          "答えは 1/6。最後に約分できるかもチェック！",
+        ]}>
+          {(s) => (
+            <div className="flex items-center gap-1 text-3xl font-extrabold text-slate-800">
+              <FracN n="1" d="2" nCls={s === 0 ? "bg-orange-200" : ""} dCls={s === 1 ? "bg-sky-200" : ""} />
+              <span>×</span>
+              <FracN n="1" d="3" nCls={s === 0 ? "bg-orange-200" : ""} dCls={s === 1 ? "bg-sky-200" : ""} />
+              <span>＝</span>
+              <span className="inline-flex flex-col items-center" style={{ lineHeight: 1.0 }}>
+                <span className="px-0.5 text-orange-600 inline-block" style={{ opacity: s >= 0 ? 1 : 0, animation: s === 0 ? "dropIn 0.5s" : "none" }}>1</span>
+                <span className="w-full border-t-2 border-current" />
+                <span className="px-0.5 text-sky-600 inline-block" style={{ opacity: s >= 1 ? 1 : 0, animation: s === 1 ? "dropIn 0.5s" : "none" }}>{s >= 1 ? "6" : " "}</span>
+              </span>
+            </div>
+          )}
+        </StepPlayer>
+      );
+    }
+
+    function DemoFlip() {
+      return (
+        <StepPlayer captions={[
+          "1/2 ÷ 1/4。分数のわり算、このままでは大変…",
+          "後ろの分数をクルッとひっくり返す（逆数）。÷が×に変身！",
+          "あとは分子どうし・分母どうし：4/2 ＝ 2",
+        ]}>
+          {(s) => (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-1 text-3xl font-extrabold text-slate-800">
+                <Frac n="1" d="2" />
+                <span key={s >= 1 ? "x" : "d"} className={s >= 1 ? "text-orange-600" : ""}
+                  style={{ display: "inline-block", animation: s === 1 ? "popIn 0.4s" : "none" }}>
+                  {s >= 1 ? "×" : "÷"}
+                </span>
+                {s >= 1 ? (
+                  <span key="flipped" className="inline-block" style={{ animation: s === 1 ? "spinIn 0.6s" : "none" }}>
+                    <Frac n="4" d="1" color="#E8590C" />
+                  </span>
                 ) : (
-                  <X size={120} strokeWidth={4} className="text-rose-500"
-                    style={{ opacity: 0.85, animation: "popIn 0.3s" }} />
+                  <Frac n="1" d="4" />
                 )}
               </div>
-            )}
-
-            {renderQuestion()}
-
-            {q.type === "input" ? (
-              <div>
-                <div className="mx-auto mb-3 w-36 text-center text-2xl font-extrabold rounded-2xl border-2 py-1.5 bg-sky-50"
-                  style={{ borderColor: meta.color, minHeight: "3rem" }} aria-live="polite">
-                  {input || "\u00A0"}
-                </div>
-                <Keypad value={input} onChange={setInput} onSubmit={() => judge(input)} disabled={locked} />
+              <div className="text-xl font-extrabold text-emerald-600 transition-opacity duration-500" style={{ opacity: s >= 2 ? 1 : 0 }}>
+                <M t="1/2 × 4/1 ＝ 4/2 ＝ 2" />
               </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                {shuffledChoices.map(c => (
-                  <button key={c} onClick={() => judge(c)} disabled={locked}
-                    className={`rounded-2xl border-b-2 py-3 px-1 text-lg font-extrabold shadow active:scale-95 transition-all ${choiceCls(c)}`}
-                    style={wrongPick === c ? { animation: "wiggle 0.3s 2" } : {}}>
-                    <span className="inline-flex items-center gap-0.5">
-                      {locked && c === q.answer && <Check size={18} className="text-emerald-600" />}
-                      {wrongPick === c && <X size={18} className="text-rose-500" />}
-                      <M t={c} />
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-3 text-center">
-              <button onClick={() => setShowHint(s => !s)}
-                className="inline-flex items-center gap-1 rounded-full px-4 py-1 text-xs font-bold text-amber-800 bg-amber-100 border-b-2 border-amber-200 active:scale-95">
-                <Lightbulb size={16} /> {showHint ? "ヒントを閉じる" : "ヒントを見る"}
-              </button>
             </div>
-            {showHint && (
-              <div className="mt-2 rounded-2xl bg-amber-50 border border-amber-200 p-3" style={{ animation: "popIn 0.3s" }}>
-                <div className="text-slate-700 text-sm font-bold">💡 {q.hint.text}</div>
-                <HintVisual v={q.hint.v} />
+          )}
+        </StepPlayer>
+      );
+    }
+
+    /* ================= ピザSVG ================= */
+    function Pizza({ den, num, size = 180 }) {
+      const cx = size / 2, cy = size / 2, r = size / 2 - 6;
+      const slices = [];
+      for (let i = 0; i < den; i++) {
+        const a0 = (i / den) * 2 * Math.PI - Math.PI / 2;
+        const a1 = ((i + 1) / den) * 2 * Math.PI - Math.PI / 2;
+        const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+        const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+        const large = (a1 - a0) > Math.PI ? 1 : 0;
+        const d = den === 1
+          ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r} Z`
+          : `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`;
+        slices.push(
+          <path key={i} d={d}
+            fill={i < num ? "#FFB25E" : "#FFF4E0"}
+            stroke="#C9560F" strokeWidth="2" strokeLinejoin="round" />
+        );
+      }
+      return (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
+          aria-label={`ピザ ${den}等分中 ${num}切れ`}>
+          <circle cx={cx} cy={cy} r={r + 3} fill="#E8590C" />
+          {slices}
+          {Array.from({ length: Math.min(num, 12) }).map((_, i) => {
+            const ang = ((i + 0.5) / den) * 2 * Math.PI - Math.PI / 2;
+            return i < num ? (
+              <circle key={`p${i}`} cx={cx + r * 0.55 * Math.cos(ang)} cy={cy + r * 0.55 * Math.sin(ang)}
+                r={size * 0.028} fill="#E6533C" />
+            ) : null;
+          })}
+        </svg>
+      );
+    }
+
+    /* ================= キーパッド ================= */
+    function Keypad({ value, onChange, onSubmit, disabled }) {
+      const press = (k) => {
+        if (disabled) return;
+        if (k === "del") return onChange(value.slice(0, -1));
+        if (k === "." && value.includes(".")) return;
+        if (value.length >= 6) return;
+        onChange(value + k);
+      };
+      const keys = ["7","8","9","4","5","6","1","2","3","0","."];
+      return (
+        <div className="w-full max-w-xs mx-auto">
+          <div className="grid grid-cols-3 gap-2">
+            {keys.map(k => (
+              <button key={k} onClick={() => press(k)} disabled={disabled}
+                className="rounded-2xl bg-white text-xl font-bold py-2.5 shadow active:scale-95 transition-transform border-b-4 border-sky-200 text-sky-800 focus:outline-none">
+                {k}
+              </button>
+            ))}
+            <button onClick={() => press("del")} disabled={disabled} aria-label="1文字消す"
+              className="rounded-2xl bg-rose-100 py-2.5 shadow active:scale-95 border-b-4 border-rose-200 flex items-center justify-center text-rose-600 focus:outline-none">
+              <Icon name="delete" size={22} />
+            </button>
+          </div>
+          <button onClick={onSubmit} disabled={disabled || value === ""}
+            className="mt-3 w-full rounded-2xl py-2.5 text-lg font-extrabold text-white shadow-lg active:scale-95 transition-transform disabled:opacity-40 focus:outline-none"
+            style={{ background: "linear-gradient(135deg,#34D399,#059669)" }}>
+            答える！
+          </button>
+        </div>
+      );
+    }
+
+    /* ================= 共通ヘッダー ================= */
+    function StageHeader({ stage, meta, hearts, onExit }) {
+      return (
+        <div className="sticky top-0 z-20 px-4 py-2 flex items-center justify-between shadow-md" style={{ background: meta.grad }}>
+          <button onClick={onExit} className="flex items-center gap-1 text-white text-xs font-bold bg-white/20 rounded-full px-2.5 py-1.5 active:scale-95 focus:outline-none">
+            <Icon name="chevronLeft" size={16} /> マップ
+          </button>
+          <div className="text-white font-extrabold text-sm drop-shadow text-center">
+            {meta.emoji} 舞台{stage.num}：{stage.name}
+          </div>
+          {hearts != null ? (
+            <div className="flex items-center gap-0.5" aria-label={`残りライフ ${hearts}`}>
+              {[0,1,2].map(i => (
+                <Icon key={i} name="heart" size={18} fill={i < hearts ? "#FF5D7A" : "transparent"}
+                  color={i < hearts ? "#FF5D7A" : "#FFFFFF88"} />
+              ))}
+            </div>
+          ) : <div className="w-14" />}
+        </div>
+      );
+    }
+
+    /* ================= クイズ画面（問題定義とシャッフル実装） ================= */
+    // 前のプロンプトで定義されたQデータを参照
+    const Q = {
+      d1: [
+        { type: "choice", q: "0.1 が 3個 集まると いくつ？", choices: ["0.3","3","0.13","1.3"], answer: "0.3", hint: { text: "0.1＋0.1＋0.1。バーが3目盛り分たまった状態だ。", v: { k: "bar", v: 3 } } },
+        { type: "choice", q: "0.1 が 7個 集まると いくつ？", choices: ["0.7","7","0.07","1.7"], answer: "0.7", hint: { text: "バーが7目盛り分。", v: { k: "bar", v: 7 } } },
+        { type: "choice", q: "0.1 が 10個 集まると いくつ？", choices: ["1","0.1","10","0.01"], answer: "1", hint: { text: "10目盛りすべてたまると、ちょうど満タン＝1になる。", v: { k: "bar", v: 10 } } },
+        { type: "choice", q: "1 を 10等分した 1つ分は？", choices: ["0.1","0.01","10","1.1"], answer: "0.1", hint: { text: "1÷10の1つ分。バーの1目盛りがそれだ。", v: { k: "bar", v: 1 } } },
+        { type: "choice", q: "0.1 が 12個 集まると いくつ？", choices: ["1.2","0.12","12","2.1"], answer: "1.2", hint: { text: "10個でちょうど1。残り2個分をたす。", v: { k: "steps", lines: ["10個で 1", "残り2個で 0.2", "合わせると？"] } } },
+        { type: "choice", q: "0.5 は 0.1 が 何個分？", choices: ["5個","50個","0.5個","10個"], answer: "5個", hint: { text: "バーが5目盛り分たまった状態が0.5。", v: { k: "bar", v: 5 } } },
+        { type: "choice", q: "1.8 は 0.1 が 何個分？", choices: ["18個","8個","180個","1.8個"], answer: "18個", hint: { text: "1と0.8に分けて数える。", v: { k: "steps", lines: ["1 → 0.1が10個", "0.8 → 0.1が8個", "合わせて何個？"] } } },
+        { type: "choice", q: "0.9 より 0.1 大きい数は？", choices: ["1","0.10","1.9","0.91"], answer: "1", hint: { text: "9目盛りに1目盛りたすと、満タンになる。", v: { k: "bar", v: 10 } } },
+        { type: "choice", q: "2.3 の「3」は 何の位？", choices: ["小数第一位（0.1の位）","一の位","十の位","小数第二位"], answer: "小数第一位（0.1の位）", hint: { text: "小数点のすぐ右が小数第一位。0.1がいくつ分かを表す。", v: { k: "steps", lines: ["2 → 一の位", "3 → 小数点のすぐ右＝小数第一位"] } } },
+        { type: "choice", q: "0.01 が 10個 集まると いくつ？", choices: ["0.1","1","0.01","0.001"], answer: "0.1", hint: { text: "位が1つ上がる関係を思い出そう。", v: { k: "steps", lines: ["0.01が10個で 0.1", "0.1が10個で 1"] } } },
+      ],
+      d2: [
+        { type: "input", q: "0.2＋0.3", disp: { hissan: { a: "0.2", b: "0.3", op: "＋" } }, answer: 0.5, hint: { text: "小数点をタテにそろえて、2＋3を計算。", v: { k: "hissan", a: "0.2", b: "0.3", op: "＋" } } },
+        { type: "input", q: "0.1＋0.6", disp: { hissan: { a: "0.1", b: "0.6", op: "＋" } }, answer: 0.7, hint: { text: "1＋6＝7。小数点はそのまま下におろす。", v: { k: "hissan", a: "0.1", b: "0.6", op: "＋" } } },
+        { type: "input", q: "0.4＋0.5", disp: { hissan: { a: "0.4", b: "0.5", op: "＋" } }, answer: 0.9, hint: { text: "4＋5＝9。", v: { k: "hissan", a: "0.4", b: "0.5", op: "＋" } } },
+        { type: "input", q: "1.2＋2.3", disp: { hissan: { a: "1.2", b: "2.3", op: "＋" } }, answer: 3.5, hint: { text: "位ごとに計算：一の位は1＋2、小数第一位は2＋3。", v: { k: "steps", lines: ["一の位:1＋2＝3", "小数第一位:2＋3＝5"] } } },
+        { type: "input", q: "3.4＋1.5", disp: { hissan: { a: "3.4", b: "1.5", op: "＋" } }, answer: 4.9, hint: { text: "位ごとにたすだけ。くり上がりはない。", v: { k: "steps", lines: ["一の位:3＋1＝4", "小数第一位:4＋5＝9"] } } },
+        { type: "input", q: "0.8−0.3", disp: { hissan: { a: "0.8", b: "0.3", op: "−" } }, answer: 0.5, hint: { text: "ひき算も同じ。小数点をそろえて 8−3。", v: { k: "hissan", a: "0.8", b: "0.3", op: "−" } } },
+        { type: "input", q: "0.9−0.6", disp: { hissan: { a: "0.9", b: "0.6", op: "−" } }, answer: 0.3, hint: { text: "9−6＝3。", v: { k: "hissan", a: "0.9", b: "0.6", op: "−" } } },
+        { type: "input", q: "2.7−1.4", disp: { hissan: { a: "2.7", b: "1.4", op: "−" } }, answer: 1.3, hint: { text: "位ごとにひく：2−1と7−4。", v: { k: "steps", lines: ["一の位:2−1＝1", "小数第一位:7−4＝3"] } } },
+        { type: "input", q: "4.6−2.1", disp: { hissan: { a: "4.6", b: "2.1", op: "−" } }, answer: 2.5, hint: { text: "位ごとにひくだけ。くり下がりはない。", v: { k: "steps", lines: ["一の位:4−2＝2", "小数第一位:6−1＝5"] } } },
+        { type: "input", q: "5.9−3.6", disp: { hissan: { a: "5.9", b: "3.6", op: "−" } }, answer: 2.3, hint: { text: "5−3と9−6を、それぞれの位で。", v: { k: "hissan", a: "5.9", b: "3.6", op: "−" } } },
+      ],
+      d3: [
+        { type: "input", q: "0.5＋0.7", disp: { hissan: { a: "0.5", b: "0.7", op: "＋" } }, answer: 1.2, hint: { text: "5＋7＝12。1を一の位にくり上げる。", v: { k: "steps", lines: ["5＋7＝12", "2を書いて1をくり上げ", "答えは 1.2 の形になる"] } } },
+        { type: "input", q: "0.6＋0.8", disp: { hissan: { a: "0.6", b: "0.8", op: "＋" } }, answer: 1.4, hint: { text: "6＋8＝14。くり上がりに注意。", v: { k: "steps", lines: ["6＋8＝14", "4を書いて1をくり上げ"] } } },
+        { type: "input", q: "0.9＋0.4", disp: { hissan: { a: "0.9", b: "0.4", op: "＋" } }, answer: 1.3, hint: { text: "9＋4＝13。", v: { k: "steps", lines: ["9＋4＝13", "3を書いて1をくり上げ"] } } },
+        { type: "input", q: "0.7＋0.7", disp: { hissan: { a: "0.7", b: "0.7", op: "＋" } }, answer: 1.4, hint: { text: "7＋7＝14。", v: { k: "steps", lines: ["7＋7＝14", "4を書いて1をくり上げ"] } } },
+        { type: "input", q: "2.3＋1.9", disp: { hissan: { a: "2.3", b: "1.9", op: "＋" } }, answer: 4.2, hint: { text: "3＋9＝12でくり上がり。一の位は2＋1＋1。", v: { k: "steps", lines: ["3＋9＝12 → 2を書いて1くり上げ", "一の位:2＋1＋1＝4"] } } },
+        { type: "input", q: "1.8＋2.5", disp: { hissan: { a: "1.8", b: "2.5", op: "＋" } }, answer: 4.3, hint: { text: "8＋5＝13でくり上がり。", v: { k: "steps", lines: ["8＋5＝13 → 3を書いて1くり上げ", "一の位:1＋2＋1＝4"] } } },
+        { type: "input", q: "3.6＋2.7", disp: { hissan: { a: "3.6", b: "2.7", op: "＋" } }, answer: 6.3, hint: { text: "6＋7＝13でくり上がり。", v: { k: "steps", lines: ["6＋7＝13 → 3を書いて1くり上げ", "一の位:3＋2＋1＝6"] } } },
+        { type: "input", q: "2.9＋1.6", disp: { hissan: { a: "2.9", b: "1.6", op: "＋" } }, answer: 4.5, hint: { text: "9＋6＝15でくり上がり。", v: { k: "steps", lines: ["9＋6＝15 → 5を書いて1くり上げ", "一の位:2＋1＋1＝4"] } } },
+        { type: "input", q: "0.75＋0.25", disp: { hissan: { a: "0.75", b: "0.25", op: "＋" } }, answer: 1, hint: { text: "75＋25＝100。ちょうどくり上がって、きりのいい数になる。", v: { k: "hissan", a: "0.75", b: "0.25", op: "＋" } } },
+        { type: "input", q: "6.4＋3.8", disp: { hissan: { a: "6.4", b: "3.8", op: "＋" } }, answer: 10.2, hint: { text: "4＋8＝12。一の位も6＋3＋1＝10で、さらにくり上がる。", v: { k: "steps", lines: ["4＋8＝12 → 2を書いて1くり上げ", "一の位:6＋3＋1＝10"] } } },
+      ],
+      d4: [
+        { type: "input", q: "1.4−0.6", disp: { hissan: { a: "1.4", b: "0.6", op: "−" } }, answer: 0.8, hint: { text: "4から6はひけない。一の位から1くり下げて 14−6。", v: { k: "steps", lines: ["4−6はできない", "1くり下げて 14−6＝8", "一の位は 0"] } } },
+        { type: "input", q: "1.2−0.5", disp: { hissan: { a: "1.2", b: "0.5", op: "−" } }, answer: 0.7, hint: { text: "くり下げて 12−5。", v: { k: "steps", lines: ["2−5はできない", "1くり下げて 12−5＝7"] } } },
+        { type: "input", q: "1.3−0.8", disp: { hissan: { a: "1.3", b: "0.8", op: "−" } }, answer: 0.5, hint: { text: "くり下げて 13−8。", v: { k: "steps", lines: ["3−8はできない", "1くり下げて 13−8＝5"] } } },
+        { type: "input", q: "2.2−0.9", disp: { hissan: { a: "2.2", b: "0.9", op: "−" } }, answer: 1.3, hint: { text: "くり下げて 12−9。一の位は 1−0。", v: { k: "steps", lines: ["1くり下げて 12−9＝3", "一の位:1−0＝1"] } } },
+        { type: "input", q: "3.1−1.4", disp: { hissan: { a: "3.1", b: "1.4", op: "−" } }, answer: 1.7, hint: { text: "くり下げて 11−4。一の位は 2−1。", v: { k: "steps", lines: ["1くり下げて 11−4＝7", "一の位:2−1＝1"] } } },
+        { type: "input", q: "4.3−1.7", disp: { hissan: { a: "4.3", b: "1.7", op: "−" } }, answer: 2.6, hint: { text: "くり下げて 13−7。一の位は 3−1。", v: { k: "steps", lines: ["1くり下げて 13−7＝6", "一の位:3−1＝2"] } } },
+        { type: "input", q: "5.1−2.6", disp: { hissan: { a: "5.1", b: "2.6", op: "−" } }, answer: 2.5, hint: { text: "くり下げて 11−6。一の位は 4−2。", v: { k: "steps", lines: ["1くり下げて 11−6＝5", "一の位:4−2＝2"] } } },
+        { type: "input", q: "3−1.2", disp: { hissan: { a: "3.0", b: "1.2", op: "−" } }, answer: 1.8, hint: { text: "3を「3.0」と考えると小数点がそろう。くり下がりあり。", v: { k: "hissan", a: "3.0", b: "1.2", op: "−" } } },
+        { type: "input", q: "5−0.5", disp: { hissan: { a: "5.0", b: "0.5", op: "−" } }, answer: 4.5, hint: { text: "5を「5.0」と考えて、くり下げて計算。", v: { k: "hissan", a: "5.0", b: "0.5", op: "−" } } },
+        { type: "input", q: "6−2.4", disp: { hissan: { a: "6.0", b: "2.4", op: "−" } }, answer: 3.6, hint: { text: "6を「6.0」と考える。くり下げて 10−4。", v: { k: "steps", lines: ["6 → 6.0 と考える", "1くり下げて 10−4＝6", "一の位:5−2＝3"] } } },
+      ],
+      d5: [
+        { type: "choice", q: "0.3 × 10 ＝", choices: ["3","0.03","30","0.3"], answer: "3", hint: { text: "×10すると、小数点が右へ1つ動く。", v: { k: "shift", from: "0.3", to: "3", dir: "right", n: 1 } } },
+        { type: "choice", q: "2.5 × 10 ＝", choices: ["25","2.50","250","0.25"], answer: "25", hint: { text: "小数点が右へ1つ！", v: { k: "shift", from: "2.5", to: "25", dir: "right", n: 1 } } },
+        { type: "choice", q: "0.07 × 10 ＝", choices: ["0.7","7","0.007","70"], answer: "0.7", hint: { text: "小数点が右へ1つ動くだけ。", v: { k: "shift", from: "0.07", to: "0.7", dir: "right", n: 1 } } },
+        { type: "choice", q: "0.4×3", disp: { hissan: { a: "0.4", b: "3", op: "×" } }, choices: ["1.2","0.12","12","0.7"], answer: "1.2", hint: { text: "まず4×3。小数点の右の数字は合計1個なので、答えも1個。", v: { k: "steps", lines: ["4×3＝12", "小数点の右は合計1個", "右から1個の場所に小数点"] } } },
+        { type: "choice", q: "1.5×2", disp: { hissan: { a: "1.5", b: "2", op: "×" } }, choices: ["3","2.5","1.52","30"], answer: "3", hint: { text: "15×2＝30。小数点をつけると3.0。最後の0は書かない。", v: { k: "steps", lines: ["15×2＝30", "右から1個の場所に小数点 → 3.0", "3.0 ＝ 3"] } } },
+        { type: "choice", q: "2.3×3", disp: { hissan: { a: "2.3", b: "3", op: "×" } }, choices: ["6.9","69","0.69","6.6"], answer: "6.9", hint: { text: "23×3＝69に小数点をつける。", v: { k: "steps", lines: ["23×3＝69", "小数点の右は合計1個 → 6.9"] } } },
+        { type: "choice", q: "0.6×5", disp: { hissan: { a: "0.6", b: "5", op: "×" } }, choices: ["3","0.3","30","3.5"], answer: "3", hint: { text: "6×5＝30 → 3.0。最後の0は消える。", v: { k: "steps", lines: ["6×5＝30", "右から1個の場所に小数点 → 3.0", "3.0 ＝ 3"] } } },
+        { type: "choice", q: "0.2×0.3", disp: { hissan: { a: "0.2", b: "0.3", op: "×" } }, choices: ["0.06","0.6","6","0.006"], answer: "0.06", hint: { text: "2×3＝6。小数点の右の数字は「合計」で数える。", v: { k: "steps", lines: ["2×3＝6", "小数点の右:1個＋1個＝合計2個", "6の前に0を入れて 0.06"] } } },
+        { type: "choice", q: "0.5×0.4", disp: { hissan: { a: "0.5", b: "0.4", op: "×" } }, choices: ["0.2","2","0.02","0.9"], answer: "0.2", hint: { text: "5×4＝20 → 0.20。最後の0は書かない。", v: { k: "steps", lines: ["5×4＝20", "小数点の右は合計2個 → 0.20", "0.20 ＝ 0.2"] } } },
+        { type: "choice", q: "1.2×0.4", disp: { hissan: { a: "1.2", b: "0.4", op: "×" } }, choices: ["0.48","4.8","48","0.048"], answer: "0.48", hint: { text: "12×4＝48。小数点の右は合計2個。", v: { k: "steps", lines: ["12×4＝48", "小数点の右:1個＋1個＝合計2個", "答えは 0.48"] } } },
+      ],
+      d6: [
+        { type: "choice", q: "3 ÷ 10 ＝", choices: ["0.3","30","0.03","3.1"], answer: "0.3", hint: { text: "÷10すると、小数点が左へ1つ動く。", v: { k: "shift", from: "3", to: "0.3", dir: "left", n: 1 } } },
+        { type: "choice", q: "47 ÷ 10 ＝", choices: ["4.7","0.47","470","47.1"], answer: "4.7", hint: { text: "小数点が左へ1つ！", v: { k: "shift", from: "47", to: "4.7", dir: "left", n: 1 } } },
+        { type: "choice", q: "0.6 ÷ 10 ＝", choices: ["0.06","6","0.6","0.006"], answer: "0.06", hint: { text: "小数点が左へ1つ。空いた場所に0が入る。", v: { k: "shift", from: "0.6", to: "0.06", dir: "left", n: 1 } } },
+        { type: "choice", q: "4.8÷2", disp: { div: { sor: "2", end: "4.8" } }, choices: ["2.4","24","0.24","2.6"], answer: "2.4", hint: { text: "整数部分と小数部分に分けて割る。", v: { k: "steps", lines: ["4÷2＝2", "0.8÷2＝0.4", "合わせると？"] } } },
+        { type: "choice", q: "6.9÷3", disp: { div: { sor: "3", end: "6.9" } }, choices: ["2.3","23","0.23","2.6"], answer: "2.3", hint: { text: "6÷3と0.9÷3に分けて考える。", v: { k: "steps", lines: ["6÷3＝2", "0.9÷3＝0.3"] } } },
+        { type: "choice", q: "0.9÷3", disp: { div: { sor: "3", end: "0.9" } }, choices: ["0.3","3","0.03","2.7"], answer: "0.3", hint: { text: "0.1が9個を3等分。1人分は0.1が3個。", v: { k: "steps", lines: ["9÷3＝3", "0.1が3個分"] } } },
+        { type: "choice", q: "8.4÷4", disp: { div: { sor: "4", end: "8.4" } }, choices: ["2.1","21","0.21","2.4"], answer: "2.1", hint: { text: "8÷4と0.4÷4に分ける。", v: { k: "steps", lines: ["8÷4＝2", "0.4÷4＝0.1"] } } },
+        { type: "choice", q: "1.2÷0.4", disp: { div: { sor: "0.4", end: "1.2" } }, choices: ["3","0.3","30","0.8"], answer: "3", hint: { text: "両方の小数点を右へ1つ動かして、整数のわり算に変身。", v: { k: "steps", lines: ["両方を10倍する", "1.2÷0.4 → 12÷4", "あとは 12÷4 を計算"] } } },
+        { type: "choice", q: "6÷0.5", disp: { div: { sor: "0.5", end: "6" } }, choices: ["12","3","1.2","0.12"], answer: "12", hint: { text: "両方を10倍して60÷5に変身。", v: { k: "steps", lines: ["両方を10倍する", "6÷0.5 → 60÷5", "あとは 60÷5 を計算"] } } },
+        { type: "choice", q: "3.6÷0.6", disp: { div: { sor: "0.6", end: "3.6" } }, choices: ["6","0.6","60","3"], answer: "6", hint: { text: "両方の小数点を右へ動かして、36÷6に。", v: { k: "steps", lines: ["両方を10倍する", "3.6÷0.6 → 36÷6", "あとは 36÷6 を計算"] } } },
+      ],
+      d7: [
+        { type: "choice", q: "0.6＋0.8", disp: { hissan: { a: "0.6", b: "0.8", op: "＋" } }, choices: ["1.4","0.14","14","1.2"], answer: "1.4", hint: { text: "小数点をそろえて。6＋8＝14でくり上がり。", v: { k: "hissan", a: "0.6", b: "0.8", op: "＋" } } },
+        { type: "choice", q: "2.1−0.7", disp: { hissan: { a: "2.1", b: "0.7", op: "−" } }, choices: ["1.4","1.6","2.4","0.14"], answer: "1.4", hint: { text: "くり下げて 11−7＝4。一の位は 1−0。", v: { k: "steps", lines: ["1くり下げて 11−7＝4", "一の位:1−0＝1"] } } },
+        { type: "choice", q: "0.7 × 10 ＝", choices: ["7","0.07","70","0.7"], answer: "7", hint: { text: "小数点が右へ1つ！", v: { k: "shift", from: "0.7", to: "7", dir: "right", n: 1 } } },
+        { type: "choice", q: "0.05 × 10 ＝", choices: ["0.5","5","0.005","50"], answer: "0.5", hint: { text: "小数点が右へ1つ動くだけ。桁に注意！", v: { k: "shift", from: "0.05", to: "0.5", dir: "right", n: 1 } } },
+        { type: "choice", q: "9 ÷ 10 ＝", choices: ["0.9","90","0.09","1.9"], answer: "0.9", hint: { text: "小数点が左へ1つ！", v: { k: "shift", from: "9", to: "0.9", dir: "left", n: 1 } } },
+        { type: "choice", q: "3.6÷0.6", disp: { div: { sor: "0.6", end: "3.6" } }, choices: ["6","0.6","60","3"], answer: "6", hint: { text: "両方の小数点を右へ動かして、整数のわり算に。", v: { k: "steps", lines: ["両方を10倍する", "3.6÷0.6 → 36÷6"] } } },
+        { type: "choice", q: "1.25＋0.75", disp: { hissan: { a: "1.25", b: "0.75", op: "＋" } }, choices: ["2","1.9","2.1","1.75"], answer: "2", hint: { text: "25＋75＝100。ちょうどくり上がる。", v: { k: "hissan", a: "1.25", b: "0.75", op: "＋" } } },
+        { type: "choice", q: "5−0.5", disp: { hissan: { a: "5.0", b: "0.5", op: "−" } }, choices: ["4.5","5.5","0.45","4.05"], answer: "4.5", hint: { text: "5を「5.0」と考えて、小数点をそろえる。", v: { k: "hissan", a: "5.0", b: "0.5", op: "−" } } },
+        { type: "choice", q: "0.3×0.3", disp: { hissan: { a: "0.3", b: "0.3", op: "×" } }, choices: ["0.09","0.9","9","0.03"], answer: "0.09", hint: { text: "3×3＝9。小数点の右は合計2個。", v: { k: "steps", lines: ["3×3＝9", "小数点の右:1個＋1個＝2個", "答えは 0.09"] } } },
+        { type: "choice", q: "7.2÷8", disp: { div: { sor: "8", end: "7.2" } }, choices: ["0.9","9","0.09","1.1"], answer: "0.9", hint: { text: "72÷8＝9をもとに、小数点の位置を考える。", v: { k: "steps", lines: ["72÷8＝9", "7.2は72の1/10 → 答えも1/10"] } } },
+      ],
+      f1: [
+        { type: "choice", q: "ピザを 4等分した 1切れは？", choices: ["1/4","4/1","1/2","1/3"], answer: "1/4", hint: { text: "分母（下）は「何等分したか」、分子（上）は「その何個分か」。", v: { k: "pizzas", list: [{ n: 1, d: 4 }] } } },
+        { type: "choice", q: "ピザを 8等分した 3切れ分は？", choices: ["3/8","8/3","3/5","1/8"], answer: "3/8", hint: { text: "8等分だから分母は8。その3個分だから分子は3。", v: { k: "pizzas", list: [{ n: 3, d: 8 }] } } },
+        { type: "choice", q: "分母（下の数）が表すのは？", choices: ["全体を分けた数","取った個数","残りの数","ピザの枚数"], answer: "全体を分けた数", hint: { text: "3/8なら「8等分のうちの3切れ」。下の8が分けた数だ。", v: { k: "pizzas", list: [{ n: 3, d: 8 }] } } },
+        { type: "choice", q: "分子（上の数）が表すのは？", choices: ["取った個数","全体を分けた数","ピザの枚数","残りの数"], answer: "取った個数", hint: { text: "3/8の3は「8切れのうち、取った3切れ」。", v: { k: "pizzas", list: [{ n: 3, d: 8 }] } } },
+        { type: "choice", q: "2/2 のピザは どれだけ？", choices: ["まるごと1枚","半分","2枚","0枚"], answer: "まるごと1枚", hint: { text: "2等分した2切れ全部＝元の1枚に戻る。分子＝分母のときは1。", v: { k: "pizzas", list: [{ n: 2, d: 2 }] } } },
+        { type: "choice", q: "5/5 は いくつと同じ？", choices: ["1","5","0","1/5"], answer: "1", hint: { text: "5等分した5個分＝全部。分子＝分母は、いつでも1。", v: { k: "pizzas", list: [{ n: 5, d: 5 }] } } },
+        { type: "choice", q: "1/2 と 1/3、大きいのは？", choices: ["1/2","1/3","同じ大きさ","比べられない"], answer: "1/2", hint: { text: "分ける数が少ないほど、1切れは大きくなる。", v: { k: "pizzas", list: [{ n: 1, d: 2 }, { n: 1, d: 3 }], sep: "・" } } },
+        { type: "choice", q: "3/4 食べた。残りは？", choices: ["1/4","3/4","1/2","1"], answer: "1/4", hint: { text: "全体は4/4。そこから3/4をひく。", v: { k: "steps", lines: ["全体 ＝ 4/4", "4/4 − 3/4 ＝"] } } },
+        { type: "choice", q: "1 を 3等分した 1つ分は？", choices: ["1/3","3","1/2","3/1"], answer: "1/3", hint: { text: "3等分だから分母は3。その1個分。", v: { k: "pizzas", list: [{ n: 1, d: 3 }] } } },
+        { type: "choice", q: "1/4 が 3個分は？", choices: ["3/4","1/12","4/3","1/4"], answer: "3/4", hint: { text: "1/4を3切れ集める。分母はそのまま、分子が3に。", v: { k: "pizzas", list: [{ n: 3, d: 4 }] } } },
+      ],
+      f2: [
+        { type: "choice", q: "1/2 と同じ大きさは どれ？", choices: ["2/4","1/4","2/3","3/4"], answer: "2/4", hint: { text: "分子と分母に同じ数をかけても、大きさは変わらない。", v: { k: "pizzas", list: [{ n: 1, d: 2 }, { n: 2, d: 4 }] } } },
+        { type: "choice", q: "2/6 を約分すると？", choices: ["1/3","1/2","2/3","1/6"], answer: "1/3", hint: { text: "分子と分母を同じ数（2）で割る。", v: { k: "pizzas", list: [{ n: 2, d: 6 }, { n: 1, d: 3 }], sep: "→" } } },
+        { type: "choice", q: "3/4 と同じ大きさは どれ？", choices: ["6/8","3/8","4/6","6/12"], answer: "6/8", hint: { text: "分子と分母を2倍してみよう。", v: { k: "pizzas", list: [{ n: 3, d: 4 }, { n: 6, d: 8 }] } } },
+        { type: "choice", q: "4/8 を約分すると？", choices: ["1/2","2/8","4/4","1/4"], answer: "1/2", hint: { text: "分子も分母も4で割れる。", v: { k: "pizzas", list: [{ n: 4, d: 8 }, { n: 1, d: 2 }], sep: "→" } } },
+        { type: "choice", q: "1/3 と 1/4 を通分するとき、いちばん小さい分母は？", choices: ["12","7","24","4"], answer: "12", hint: { text: "3と4の両方の段（九九）に出てくる、いちばん小さい数。", v: { k: "steps", lines: ["3の段:3, 6, 9, 12…", "4の段:4, 8, 12…", "共通する最小の数は？"] } } },
+        { type: "choice", q: "6/9 を約分すると？", choices: ["2/3","1/3","3/4","1/2"], answer: "2/3", hint: { text: "分子も分母も3で割れる。", v: { k: "pizzas", list: [{ n: 6, d: 9 }, { n: 2, d: 3 }], sep: "→" } } },
+        { type: "choice", q: "2/3 と同じ大きさは どれ？", choices: ["4/6","2/6","3/4","4/5"], answer: "4/6", hint: { text: "分子と分母を2倍する。", v: { k: "pizzas", list: [{ n: 2, d: 3 }, { n: 4, d: 6 }] } } },
+        { type: "choice", q: "5/10 を約分すると？", choices: ["1/2","1/5","2/5","1/10"], answer: "1/2", hint: { text: "分子も分母も5で割れる。", v: { k: "steps", lines: ["5÷5＝1", "10÷5＝2"] } } },
+        { type: "choice", q: "1/2 と 1/6 を通分するとき、いちばん小さい分母は？", choices: ["6","12","8","2"], answer: "6", hint: { text: "2の段と6の段で、最初に共通する数。", v: { k: "steps", lines: ["2の段:2, 4, 6…", "6の段:6, 12…", "共通する最小の数は？"] } } },
+        { type: "choice", q: "8/12 を約分すると？", choices: ["2/3","3/4","1/2","2/12"], answer: "2/3", hint: { text: "分子も分母も4で割れる。", v: { k: "steps", lines: ["8÷4＝2", "12÷4＝3"] } } },
+      ],
+      f3: [
+        { type: "choice", q: "1/5 ＋ 2/5 ＝", choices: ["3/5","3/10","2/5","1/5"], answer: "3/5", hint: { text: "分母が同じときは、分子だけたす。分母はそのまま！", v: { k: "steps", lines: ["分子:1＋2＝3", "分母:5のまま"] } } },
+        { type: "choice", q: "3/7 − 1/7 ＝", choices: ["2/7","2/14","4/7","1/7"], answer: "2/7", hint: { text: "分子だけひき算する。", v: { k: "steps", lines: ["分子:3−1＝2", "分母:7のまま"] } } },
+        { type: "choice", q: "2/9 ＋ 5/9 ＝", choices: ["7/9","7/18","3/9","10/9"], answer: "7/9", hint: { text: "分子だけたす。", v: { k: "steps", lines: ["分子:2＋5＝7", "分母:9のまま"] } } },
+        { type: "choice", q: "5/8 − 1/8 ＝", choices: ["1/2","4/16","6/8","3/8"], answer: "1/2", hint: { text: "4/8になったら、最後に約分。", v: { k: "steps", lines: ["5/8 − 1/8 ＝ 4/8", "4/8 を約分すると？"] } } },
+        { type: "choice", q: "1/2 ＋ 1/4 ＝", choices: ["3/4","2/6","1/4","2/4"], answer: "3/4", hint: { text: "分母が違うので、まず通分する。", v: { k: "steps", lines: ["1/2 ＝ 2/4 に通分", "2/4 ＋ 1/4 ＝"] } } },
+        { type: "choice", q: "1/2 ＋ 1/3 ＝", choices: ["5/6","2/5","2/6","1/6"], answer: "5/6", hint: { text: "分母を6に通分してからたす。", v: { k: "steps", lines: ["1/2 ＝ 3/6 ， 1/3 ＝ 2/6", "3/6 ＋ 2/6 ＝"] } } },
+        { type: "choice", q: "2/3 − 1/6 ＝", choices: ["1/2","1/3","3/6","1/6"], answer: "1/2", hint: { text: "分母を6にそろえてから計算し、最後に約分。", v: { k: "steps", lines: ["2/3 ＝ 4/6 に通分", "4/6 − 1/6 ＝ 3/6", "3/6 を約分すると？"] } } },
+        { type: "choice", q: "1/6 ＋ 1/3 ＝", choices: ["1/2","2/9","1/3","2/3"], answer: "1/2", hint: { text: "1/3を6分の何になおす？計算後に約分も。", v: { k: "steps", lines: ["1/3 ＝ 2/6 に通分", "1/6 ＋ 2/6 ＝ 3/6", "3/6 を約分すると？"] } } },
+        { type: "choice", q: "3/4 − 1/2 ＝", choices: ["1/4","2/2","1/2","2/4"], answer: "1/4", hint: { text: "1/2を4分の何になおす？", v: { k: "steps", lines: ["1/2 ＝ 2/4 に通分", "3/4 − 2/4 ＝"] } } },
+        { type: "choice", q: "5/6 − 1/2 ＝", choices: ["1/3","4/4","2/6","1/2"], answer: "1/3", hint: { text: "1/2＝3/6。答えは約分できる。", v: { k: "steps", lines: ["1/2 ＝ 3/6 に通分", "5/6 − 3/6 ＝ 2/6", "2/6 を約分すると？"] } } },
+      ],
+      f4: [
+        { type: "choice", q: "1/2 × 1/3 ＝", choices: ["1/6","2/3","1/5","2/6"], answer: "1/6", hint: { text: "かけ算は、分子どうし・分母どうしをかけるだけ。", v: { k: "steps", lines: ["分子:1×1＝1", "分母:2×3＝6"] } } },
+        { type: "choice", q: "2/3 × 3/4 ＝", choices: ["1/2","6/7","5/12","2/4"], answer: "1/2", hint: { text: "計算したあと、約分を忘れずに。", v: { k: "steps", lines: ["2/3 × 3/4 ＝ 6/12", "6/12 を約分すると？"] } } },
+        { type: "choice", q: "1/4 × 2 ＝", choices: ["1/2","1/8","2/6","1/4"], answer: "1/2", hint: { text: "2は 2/1。分子どうしをかけて 2/4 → 約分。", v: { k: "steps", lines: ["1/4 × 2/1 ＝ 2/4", "2/4 を約分すると？"] } } },
+        { type: "choice", q: "2/5 × 1/2 ＝", choices: ["1/5","3/7","2/7","2/5"], answer: "1/5", hint: { text: "2/10になったら約分。", v: { k: "steps", lines: ["2/5 × 1/2 ＝ 2/10", "2/10 を約分すると？"] } } },
+        { type: "choice", q: "3/5 × 5/6 ＝", choices: ["1/2","8/11","15/11","3/6"], answer: "1/2", hint: { text: "15/30になったら約分。とちゅうで約分してもOK。", v: { k: "steps", lines: ["3/5 × 5/6 ＝ 15/30", "15/30 を約分すると？"] } } },
+        { type: "choice", q: "1/2 ÷ 1/4 ＝", choices: ["2","1/8","1/2","4"], answer: "2", hint: { text: "後ろの分数をひっくり返して、かけ算に変える。", v: { k: "flip", a: [1, 2], b: [1, 4] } } },
+        { type: "choice", q: "2/5 ÷ 2 ＝", choices: ["1/5","4/5","2/10","2/3"], answer: "1/5", hint: { text: "2は 2/1。ひっくり返して 1/2 をかける。計算後は約分！", v: { k: "flip", a: [2, 5], b: [2, 1] } } },
+        { type: "choice", q: "3/4 ÷ 1/2 ＝", choices: ["3/2","3/8","2/3","1/2"], answer: "3/2", hint: { text: "ひっくり返してかけると 6/4。最後に約分する。", v: { k: "flip", a: [3, 4], b: [1, 2] } } },
+        { type: "choice", q: "1/3 ÷ 1/6 ＝", choices: ["2","1/18","1/2","3"], answer: "2", hint: { text: "1/6をひっくり返して 6/1 をかける。", v: { k: "flip", a: [1, 3], b: [1, 6] } } },
+        { type: "choice", q: "5/6 ÷ 5 ＝", choices: ["1/6","25/6","1/5","5/6"], answer: "1/6", hint: { text: "×1/5 に変身。5/30になったら約分。", v: { k: "flip", a: [5, 6], b: [5, 1] } } },
+      ],
+      f5: [
+        { type: "choice", q: "4/9 ＋ 2/9 ＝", choices: ["2/3","1/3","2/9","8/9"], answer: "2/3", hint: { text: "6/9になったら約分！", v: { k: "steps", lines: ["4/9 ＋ 2/9 ＝ 6/9", "6/9 を約分すると？"] } } },
+        { type: "choice", q: "5/6 − 1/6 ＝", choices: ["2/3","4/12","1/6","5/6"], answer: "2/3", hint: { text: "4/6になったら約分！", v: { k: "steps", lines: ["5/6 − 1/6 ＝ 4/6", "4/6 を約分すると？"] } } },
+        { type: "choice", q: "1/4 ＋ 1/2 ＝", choices: ["3/4","2/6","1/8","2/4"], answer: "3/4", hint: { text: "1/2 を 2/4 に通分する。", v: { k: "steps", lines: ["1/2 ＝ 2/4", "1/4 ＋ 2/4 ＝"] } } },
+        { type: "choice", q: "1/3 × 1/2 ＝", choices: ["1/6","2/5","1/5","2/6"], answer: "1/6", hint: { text: "分子どうし・分母どうしをかける！", v: { k: "steps", lines: ["分子:1×1", "分母:3×2"] } } },
+        { type: "choice", q: "3/5 ÷ 3 ＝", choices: ["1/5","9/5","3/15","1/3"], answer: "1/5", hint: { text: "×1/3 に変身。3/15になったら約分！", v: { k: "flip", a: [3, 5], b: [3, 1] } } },
+        { type: "choice", q: "1/2 ÷ 1/3 ＝", choices: ["3/2","1/6","2/3","1/5"], answer: "3/2", hint: { text: "1/3 をひっくり返して ×3/1！", v: { k: "flip", a: [1, 2], b: [1, 3] } } },
+        { type: "choice", q: "2/4 を約分すると？", choices: ["1/2","2/2","1/4","4/2"], answer: "1/2", hint: { text: "分子も分母も2で割る。", v: { k: "pizzas", list: [{ n: 2, d: 4 }, { n: 1, d: 2 }], sep: "→" } } },
+        { type: "choice", q: "7/8 − 3/8 ＝", choices: ["1/2","1/4","3/8","5/8"], answer: "1/2", hint: { text: "4/8になったら約分！", v: { k: "steps", lines: ["7/8 − 3/8 ＝ 4/8", "4/8 を約分すると？"] } } },
+        { type: "choice", q: "2/3 × 1/4 ＝", choices: ["1/6","2/7","3/7","2/3"], answer: "1/6", hint: { text: "2/12になったら約分。", v: { k: "steps", lines: ["2/3 × 1/4 ＝ 2/12", "2/12 を約分すると？"] } } },
+        { type: "choice", q: "3/4 と同じ大きさは どれ？", choices: ["9/12","3/8","6/9","4/3"], answer: "9/12", hint: { text: "分子と分母を3倍してみよう。", v: { k: "steps", lines: ["3×3＝9", "4×3＝12"] } } },
+      ],
+    };
+
+    function Quiz({ stage, questions, onClear, onExit, addXp }) {
+      const isBoss = stage.type === "boss";
+      const meta = QUEST_META[stage.quest];
+      const [order] = useState(() => isBoss ? [...questions].sort(() => Math.random() - 0.5) : questions);
+      const [idx, setIdx] = useState(0);
+      const [hearts, setHearts] = useState(3);
+      const [showHint, setShowHint] = useState(false);
+      const [feedback, setFeedback] = useState(null);
+      const [locked, setLocked] = useState(false);
+      const [input, setInput] = useState("");
+      const [confetti, setConfetti] = useState(0);
+      const [mark, setMark] = useState(null);
+      const [wrongPick, setWrongPick] = useState(null);
+      const [timeLeft, setTimeLeft] = useState(isBoss ? BOSS_TIME : null);
+      const [timeUp, setTimeUp] = useState(false);
+      const [earned, setEarned] = useState(0);
+      const doneRef = useRef(false);
+      const ngTimerRef = useRef(null);
+
+      const q = order[idx];
+      const perQ = isBoss ? 15 : 10;
+
+      // 選択肢をアトランダムにシャッフルして保持するState
+      const [shuffledChoices, setShuffledChoices] = useState([]);
+
+      useEffect(() => {
+        if (q && q.choices) {
+          setShuffledChoices([...q.choices].sort(() => Math.random() - 0.5));
+        } else {
+          setShuffledChoices([]);
+        }
+      }, [q, idx]);
+
+      useEffect(() => {
+        if (!isBoss || timeUp || doneRef.current) return;
+        if (timeLeft <= 0) { setTimeUp(true); return; }
+        const t = setTimeout(() => setTimeLeft(s => s - 1), 1000);
+        return () => clearTimeout(t);
+      }, [timeLeft, isBoss, timeUp]);
+
+      useEffect(() => () => clearTimeout(ngTimerRef.current), []);
+
+      const next = useCallback((gained) => {
+        if (idx + 1 >= order.length) {
+          doneRef.current = true;
+          onClear(gained);
+        } else {
+          setIdx(i => i + 1);
+          setShowHint(false);
+          setFeedback(null);
+          setInput("");
+          setLocked(false);
+          setMark(null);
+          setWrongPick(null);
+        }
+      }, [idx, order.length, onClear]);
+
+      const judge = (userAnswer) => {
+        if (locked || timeUp) return;
+        let ok;
+        if (q.type === "input") {
+          const v = parseFloat(userAnswer);
+          ok = !Number.isNaN(v) && Math.abs(v - q.answer) < 1e-9;
+        } else {
+          ok = userAnswer === q.answer;
+        }
+        if (ok) {
+          const gained = earned + perQ;
+          setEarned(gained);
+          addXp(perQ);
+          setFeedback({ ok: true, msg: pick(PRAISE) });
+          setMark("ok");
+          setConfetti(c => c + 1);
+          setLocked(true);
+          setTimeout(() => next(gained), 1400);
+        } else {
+          const h = Math.max(0, hearts - 1);
+          setHearts(h);
+          setFeedback({ ok: false, msg: h === 0 ? "大丈夫！詳しいヒントを出したよ。じっくり考えよう。" : pick(ENCOURAGE) });
+          setMark("ng");
+          if (q.type === "choice") setWrongPick(userAnswer);
+          clearTimeout(ngTimerRef.current);
+          ngTimerRef.current = setTimeout(() => { setMark(null); setWrongPick(null); }, 900);
+          if (h === 0) setShowHint(true);
+          setInput("");
+        }
+      };
+
+      const retryBoss = () => {
+        setIdx(0); setHearts(3); setShowHint(false); setFeedback(null);
+        setLocked(false); setInput(""); setTimeLeft(BOSS_TIME); setTimeUp(false); setEarned(0);
+        setMark(null); setWrongPick(null);
+      };
+
+      const renderQuestion = () => {
+        if (q.disp?.hissan) {
+          const h = q.disp.hissan;
+          return (
+            <div className="text-center py-1">
+              <div className="text-[10px] font-bold text-slate-400 mb-1">
+                {h.op === "×" ? "かけ算の筆算：右にそろえる" : "筆算：小数点をタテにそろえる"}
               </div>
-            )}
+              <Hissan a={h.a} b={h.b} op={h.op} />
+            </div>
+          );
+        }
+        if (q.disp?.div) {
+          const d = q.disp.div;
+          return (
+            <div className="text-center py-1">
+              <div className="text-[10px] font-bold text-slate-400 mb-1">わり算の筆算</div>
+              <DivHissan sor={d.sor} end={d.end} />
+            </div>
+          );
+        }
+        return (
+          <div className="text-center text-xl sm:text-2xl font-extrabold text-slate-800 py-2">
+            <M t={q.q} />
+          </div>
+        );
+      };
+
+      const choiceCls = (c) => {
+        if (locked && c === q.answer) return "bg-emerald-100 border-emerald-400 text-emerald-700 ring-4 ring-emerald-200";
+        if (wrongPick === c) return "bg-rose-100 border-rose-400 text-rose-600";
+        return "bg-slate-50 hover:bg-amber-50 border-slate-200 text-slate-800";
+      };
+
+      return (
+        <div className="min-h-screen pb-6" style={{ background: `linear-gradient(180deg, ${meta.light}, #FFFFFF)` }}>
+          <Confetti trigger={confetti} />
+          <StageHeader stage={stage} meta={meta} hearts={hearts} onExit={onExit} />
+
+          <div className="max-w-xl mx-auto px-4 mt-2">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-3 bg-white rounded-full shadow-inner overflow-hidden border border-black/5">
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${(idx / order.length) * 100}%`, background: meta.grad }} />
+              </div>
+              <div className="text-xs font-bold" style={{ color: meta.color }}>
+                {idx + 1} / {order.length}
+              </div>
+              {isBoss && (
+                <div className={`flex items-center gap-1 text-xs font-extrabold px-2.5 py-0.5 rounded-full text-white ${timeLeft <= 20 ? "bg-rose-500" : "bg-slate-700"}`}
+                  style={timeLeft <= 20 ? { animation: "wiggle 0.5s infinite" } : {}}>
+                  <Icon name="timer" size={14} /> {timeLeft}
+                </div>
+              )}
+            </div>
           </div>
 
-          {feedback && (
-            <div className={`mt-3 flex items-center justify-center gap-1.5 text-lg font-extrabold rounded-2xl py-2 px-3 shadow ${feedback.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-50 text-rose-600"}`}
-              style={{ animation: "popIn 0.3s" }} role="status">
-              {feedback.ok
-                ? <span className="inline-flex items-center justify-center w-6 h-6 rounded-full border-4 border-emerald-500 shrink-0" />
-                : <X size={22} className="shrink-0" />}
-              {feedback.msg}
+          {timeUp ? (
+            <div className="max-w-xl mx-auto px-4 mt-6 text-center animate-[popIn_0.4s_ease]">
+              <div className="bg-white rounded-3xl shadow-xl p-6">
+                <div className="text-4xl mb-2">⏰</div>
+                <div className="text-xl font-extrabold text-slate-800 mb-1">時間切れ！</div>
+                <p className="text-slate-600 text-sm font-bold mb-4">ボスは手ごわい。もう一度挑戦しよう！</p>
+                <button onClick={retryBoss}
+                  className="rounded-2xl px-6 py-2 text-lg font-extrabold text-white shadow-lg active:scale-95"
+                  style={{ background: meta.grad }}>
+                  リベンジする！
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-xl mx-auto px-4 mt-3">
+              <div className="relative bg-white rounded-3xl shadow-xl p-5 border-b-4 animate-[popIn_0.35s_ease]" style={{ borderColor: meta.color }}>
+                {mark && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ zIndex: 10 }} aria-hidden="true">
+                    {mark === "ok" ? (
+                      <div className="w-28 h-28 rounded-full"
+                        style={{ border: "12px solid rgba(16,185,129,0.85)", animation: "popIn 0.35s" }} />
+                    ) : (
+                      <Icon name="x" size={120} strokeWidth={4} className="text-rose-500 opacity-85 animate-[popIn_0.3s_ease]" />
+                    )}
+                  </div>
+                )}
+
+                {renderQuestion()}
+
+                {q.type === "input" ? (
+                  <div>
+                    <div className="mx-auto mb-3 w-36 text-center text-2xl font-extrabold rounded-2xl border-2 py-1.5 bg-sky-50"
+                      style={{ borderColor: meta.color, minHeight: "3rem" }} aria-live="polite">
+                      {input || "\u00A0"}
+                    </div>
+                    <Keypad value={input} onChange={setInput} onSubmit={() => judge(input)} disabled={locked} />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    {shuffledChoices.map(c => (
+                      <button key={c} onClick={() => judge(c)} disabled={locked}
+                        className={`rounded-2xl border-b-2 py-3 px-1 text-lg font-extrabold shadow active:scale-95 transition-all focus:outline-none ${choiceCls(c)}`}
+                        style={wrongPick === c ? { animation: "wiggle 0.3s 2" } : {}}>
+                        <span className="inline-flex items-center gap-0.5">
+                          {locked && c === q.answer && <Icon name="check" size={18} className="text-emerald-600" />}
+                          {wrongPick === c && <Icon name="x" size={18} className="text-rose-500" />}
+                          <M t={c} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 text-center">
+                  <button onClick={() => setShowHint(s => !s)}
+                    className="inline-flex items-center gap-1 rounded-full px-4 py-1 text-xs font-bold text-amber-800 bg-amber-100 border-b-2 border-amber-200 active:scale-95">
+                    <Icon name="lightbulb" size={16} /> {showHint ? "ヒントを閉じる" : "ヒントを見る"}
+                  </button>
+                </div>
+                {showHint && (
+                  <div className="mt-2 rounded-2xl bg-amber-50 border border-amber-200 p-3 animate-[popIn_0.3s_ease]">
+                    <div className="text-slate-700 text-sm font-bold">💡 {q.hint.text}</div>
+                    <HintVisual v={q.hint.v} />
+                  </div>
+                )}
+              </div>
+
+              {feedback && (
+                <div className={`mt-3 flex items-center justify-center gap-1.5 text-lg font-extrabold rounded-2xl py-2 px-3 shadow animate-[popIn_0.3s_ease] ${feedback.ok ? "bg-emerald-100 text-emerald-700" : "bg-rose-50 text-rose-600"}`}
+                  role="status">
+                  {feedback.ok
+                    ? <span className="inline-flex items-center justify-center w-6 h-6 rounded-full border-4 border-emerald-500 shrink-0" />
+                    : <Icon name="x" size={22} className="shrink-0" />}
+                  {feedback.msg}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
-    </div>
-  );
-}
+      );
+    }
 
-/* ================= レッスン（カード余白調整） ================= */
-function LessonCard({ title, children }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 mb-2.5">
-      <div className="font-extrabold text-sm text-slate-800 mb-1 flex items-center gap-1.5">
-        <BookOpen size={16} className="text-sky-600" /> {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-const LESSONS = {
-  d2: () => (
-    <>
-      <LessonCard title="動かして覚えよう：くり上がりなしのたし算">
-        <DemoAddSubNoCarry />
-      </LessonCard>
-      <LessonCard title="ひき算も手順は同じ">
-        <div className="flex justify-center"><Hissan a="0.8" b="0.3" op="−" ans="0.5" size="text-2xl" /></div>
-        <div className="text-center text-xs font-bold text-slate-500 mt-1">そろえる → 位ごとにひく → 点をおろす</div>
-      </LessonCard>
-    </>
-  ),
-  d3: () => (
-    <>
-      <LessonCard title="動かして覚えよう：くり上がりのあるたし算">
-        <DemoCarry />
-      </LessonCard>
-      <LessonCard title="もう1つの例（2.3＋1.9）">
-        <div className="flex justify-center mb-1"><Hissan a="2.3" b="1.9" op="＋" ans="4.2" size="text-2xl" /></div>
-        <StepsViz lines={[
-          "3＋9＝12 → 2を書いて1くり上げ",
-          "一の位:2＋1＋くり上げた1＝4",
-        ]} />
-      </LessonCard>
-    </>
-  ),
-  d4: () => (
-    <>
-      <LessonCard title="動かして覚えよう：くり下がりのあるひき算">
-        <DemoBorrow />
-      </LessonCard>
-      <LessonCard title="整数からひくとき（3−1.2）">
-        <div className="flex justify-center mb-1"><Hissan a="3.0" b="1.2" op="−" ans="1.8" size="text-2xl" /></div>
-        <StepsViz lines={[
-          "3を「3.0」と考えて小数点をそろえる",
-          "0−2はできない → 1くり下げて 10−2＝8",
-          "一の位:2−1＝1 → 答えは 1.8",
-        ]} />
-      </LessonCard>
-    </>
-  ),
-  d5: () => (
-    <>
-      <LessonCard title="動かして覚えよう：×10のルール">
-        <DemoShiftX10 />
-      </LessonCard>
-      <LessonCard title="動かして覚えよう：小数×小数の筆算">
-        <DemoMultRight />
-      </LessonCard>
-      <LessonCard title="整数は「そのまま右にそろえる」">
-        <div className="flex justify-center mb-1"><Hissan a="1.5" b="2" op="×" ans="3" size="text-2xl" /></div>
-        <div className="text-center text-xs font-bold text-slate-500">
-          2.0のような数は「2」と書いて右にそろえる。答えの3.0も「3」と書く。
-        </div>
-      </LessonCard>
-    </>
-  ),
-  d6: () => (
-    <>
-      <LessonCard title="動かして覚えよう：÷10のルール">
-        <DemoShiftDiv10 />
-      </LessonCard>
-      <LessonCard title="動かして覚えよう：小数のわり算は整数に変身">
-        <DemoDivMove />
-      </LessonCard>
-    </>
-  ),
-  d7: () => (
-    <>
-      <LessonCard title="ボス戦前の最終確認！">
-        <StepsViz lines={[
-          "たし算・ひき算 → 小数点をタテにそろえる",
-          "×10 → 小数点が右へ ／ ÷10 → 左へ",
-          "かけ算 → 右にそろえて、小数点の右の数を合計",
-          "小数で割る → 両方の小数点を動かして整数に変身",
-        ]} />
-      </LessonCard>
-      <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 font-extrabold text-xs text-rose-600 text-center">
-        ⏰ 全10問・制限時間{BOSS_TIME}秒！ボタンを押すとタイマーが始まるぞ。
-      </div>
-    </>
-  ),
-  f2: () => (
-    <>
-      <LessonCard title="動かして覚えよう：約分">
-        <DemoYakubun />
-      </LessonCard>
-      <LessonCard title="動かして覚えよう：通分">
-        <DemoTsubun />
-      </LessonCard>
-    </>
-  ),
-  f3: () => (
-    <>
-      <LessonCard title="動かして覚えよう：分母が同じたし算">
-        <DemoFracAddSame />
-      </LessonCard>
-      <LessonCard title="分母が違うときは、まず通分（ステージ2のワザ）">
-        <StepsViz lines={[
-          "1/2 ＋ 1/3 は、そのままではたせない",
-          "分母を6にそろえる：1/2 ＝ 3/6 ， 1/3 ＝ 2/6",
-          "3/6 ＋ 2/6 ＝ 5/6",
-          "最後に約分できるかチェック！",
-        ]} />
-      </LessonCard>
-    </>
-  ),
-  f4: () => (
-    <>
-      <LessonCard title="動かして覚えよう：分数のかけ算">
-        <DemoFracMul />
-      </LessonCard>
-      <LessonCard title="動かして覚えよう：分数のわり算（逆数）">
-        <DemoFlip />
-      </LessonCard>
-    </>
-  ),
-  f5: () => (
-    <>
-      <LessonCard title="ボス戦前の最終確認！">
-        <StepsViz lines={[
-          "分母が同じ → 分子だけ計算",
-          "分母が違う → 通分してから",
-          "かけ算 → 分子どうし・分母どうし",
-          "わり算 → ひっくり返してかけ算",
-          "最後の約分を忘れずに！",
-        ]} />
-      </LessonCard>
-      <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 font-extrabold text-xs text-rose-600 text-center">
-        ⏰ 全10問・制限時間{BOSS_TIME}秒！ボタンを押すとタイマーが始まるぞ。
-      </div>
-    </>
-  ),
-};
-
-/* ================= 小数：探検ステージ ================= */
-function DecimalExplore() {
-  const [v, setV] = useState(3);
-  return (
-    <div>
-      <h2 className="text-lg font-extrabold text-slate-800 text-center mb-0.5">1 を 10 に分けてみよう</h2>
-      <p className="text-center text-slate-500 font-bold mb-3 text-xs">スライダーを動かして、水槽に水をためてみよう</p>
-      <div className="flex justify-center mb-2">
-        <div className="flex h-12 w-full max-w-md rounded-2xl overflow-hidden border-4 border-sky-600 bg-sky-50">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="flex-1 border-r border-sky-200 last:border-r-0 transition-colors duration-300"
-              style={{ background: i < v ? "linear-gradient(180deg,#7CD4FF,#2E86DE)" : "transparent" }} />
-          ))}
-        </div>
-      </div>
-      <input type="range" min={0} max={10} value={v} onChange={e => setV(Number(e.target.value))}
-        className="w-full max-w-md mx-auto block accent-sky-600" aria-label="0.1きざみのスライダー" style={{ height: "1.8rem" }} />
-      <div className="text-center mt-1">
-        <span className="text-3xl font-extrabold text-sky-700">{v === 10 ? "1.0" : `0.${v}`}</span>
-        <div className="text-slate-600 text-sm font-bold mt-0.5">
-          0.1 が <span className="text-sky-700 text-lg">{v}</span> 個分
-          {v === 10 && <span className="ml-1 text-emerald-600 text-xs">→ 満タンで 1！🎉</span>}
-        </div>
-      </div>
-      <div className="mt-3 rounded-2xl bg-sky-50 p-3 text-slate-700 font-bold text-xs leading-relaxed">
-        1を10等分した1つ分が <span className="text-sky-700">0.1</span>。このように「1より小さい数」を表すのが小数だ。
-      </div>
-    </div>
-  );
-}
-
-/* ================= 分数：探検ステージ ================= */
-function FractionExplore() {
-  const [den, setDen] = useState(4);
-  const [num, setNum] = useState(1);
-  return (
-    <div>
-      <h2 className="text-lg font-extrabold text-slate-800 text-center mb-0.5">ピザを分けよう</h2>
-      <p className="text-center text-slate-500 font-bold mb-2 text-xs">数字を変えると、ピザがリアルタイムで変わるよ</p>
-      <div className="flex justify-center" style={{ animation: "floaty 3s ease-in-out infinite" }}>
-        <Pizza den={den} num={num} size={140} />
-      </div>
-      <div className="flex items-center justify-center gap-4 mt-3 flex-wrap">
-        <div className="text-center text-4xl font-extrabold text-orange-700">
-          <Frac n={num} d={den} />
-        </div>
-        <div className="space-y-1.5">
-          <Counter label="分子（取る数）" value={num} min={0} max={den} onChange={setNum} color="#E8590C" />
-          <Counter label="分母（分ける数）" value={den} min={1} max={12}
-            onChange={(d) => { setDen(d); setNum(n => Math.min(n, d)); }} color="#B8500A" />
-        </div>
-      </div>
-      <div className="mt-3 rounded-2xl bg-orange-50 p-3 text-slate-700 font-bold text-xs leading-relaxed">
-        下の数（<span className="text-orange-700">分母</span>）は「何等分したか」、上の数（<span className="text-orange-700">分子</span>）は「その何個分か」。
-        {num === den && num > 0 && <span className="text-emerald-600"> いま全部そろってちょうど1枚分！🎉</span>}
-      </div>
-    </div>
-  );
-}
-function Counter({ label, value, min, max, onChange, color }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="text-[10px] font-extrabold w-20 text-slate-600">{label}</div>
-      <button onClick={() => onChange(Math.max(min, value - 1))} aria-label={`${label}を減らす`}
-        className="w-8 h-8 rounded-full text-white text-lg font-extrabold shadow active:scale-90" style={{ background: color }}>−</button>
-      <div className="w-6 text-center text-lg font-extrabold text-slate-800">{value}</div>
-      <button onClick={() => onChange(Math.min(max, value + 1))} aria-label={`${label}を増やす`}
-        className="w-8 h-8 rounded-full text-white text-lg font-extrabold shadow active:scale-90" style={{ background: color }}>＋</button>
-    </div>
-  );
-}
-
-/* ================= ステージ画面（表示欄を小さく微調整） ================= */
-function StageScreen({ stage, onClear, onExit, addXp }) {
-  const [phase, setPhase] = useState("lesson");
-  const meta = QUEST_META[stage.quest];
-  const isBoss = stage.type === "boss";
-
-  if (phase === "quiz") {
-    return <Quiz stage={stage} questions={Q[stage.id]} onClear={onClear} onExit={onExit} addXp={addXp} />;
-  }
-
-  const Lesson = LESSONS[stage.id];
-  return (
-    <div className="min-h-screen pb-6" style={{ fontFamily: FONT, background: `linear-gradient(180deg, ${meta.light}, #FFFFFF)` }}>
-      <StageHeader stage={stage} meta={meta} hearts={null} onExit={onExit} />
-      <div className="max-w-xl mx-auto px-4 mt-3">
-        <div className="bg-white rounded-3xl shadow-xl p-4 border-b-4" style={{ borderColor: meta.color, animation: "popIn 0.35s" }}>
-          {stage.type === "explore"
-            ? (stage.quest === "d" ? <DecimalExplore /> : <FractionExplore />)
-            : (
-              <>
-                <div className="text-center text-sm font-extrabold text-slate-800 mb-2.5">
-                  📖 動かしながら「解き方」を確認しよう
-                </div>
-                {Lesson && <Lesson />}
-              </>
-            )}
-          <button onClick={() => setPhase("quiz")}
-            className="mt-4 w-full rounded-2xl py-2.5 text-lg font-extrabold text-white shadow-lg active:scale-95 flex items-center justify-center gap-2"
-            style={{ background: meta.grad }}>
-            {isBoss ? <><Swords size={18} /> ボスに挑む！（タイマー開始）</> : "クイズに挑戦！（全10問）"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ================= クリア画面 ================= */
-function ClearScreen({ stage, gained, newBadge, onBack }) {
-  const meta = QUEST_META[stage.quest];
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ fontFamily: FONT, background: `linear-gradient(180deg, ${meta.light}, #FFFFFF)` }}>
-      <Confetti trigger={1} />
-      <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-md w-full text-center" style={{ animation: "popIn 0.45s" }}>
-        <div className="text-5xl mb-1">{newBadge ? "👑" : "🌟"}</div>
-        <h2 className="text-2xl font-extrabold text-slate-800 mb-0.5">ステージクリア！</h2>
-        <p className="text-slate-500 font-bold text-sm mb-3">{meta.emoji} {stage.name}</p>
-        <div className="rounded-2xl bg-violet-50 py-2 px-3 font-extrabold text-violet-700 text-lg mb-2">
-          <Zap className="inline mr-1" size={18} /> ＋{gained + 30} XP
-        </div>
-        {newBadge && (
-          <div className="rounded-2xl p-3 mb-2 text-white font-extrabold text-lg shadow-lg" style={{ background: meta.grad, animation: "wiggle 1s 2" }}>
-            <Crown className="inline mr-1.5" size={18} />バッジ獲得：{newBadge}！
+    /* ================= レッスンカード ================= */
+    function LessonCard({ title, children }) {
+      return (
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 mb-2.5">
+          <div className="font-extrabold text-sm text-slate-800 mb-1 flex items-center gap-1.5">
+            <Icon name="bookOpen" size={16} className="text-sky-600" /> {title}
           </div>
-        )}
-        <button onClick={onBack}
-          className="mt-2 w-full rounded-2xl py-2.5 text-lg font-extrabold text-white shadow-lg active:scale-95"
-          style={{ background: meta.grad }}>
-          マップに戻る
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ================= クエストマップ ================= */
-function QuestMap({ cleared, badges, xp, level, onSelect }) {
-  const nextLevelXp = level * 100;
-  const prevLevelXp = (level - 1) * 100;
-  const pct = Math.min(100, ((xp - prevLevelXp) / (nextLevelXp - prevLevelXp)) * 100);
-
-  return (
-    <div className="min-h-screen pb-10" style={{ fontFamily: FONT, background: "linear-gradient(180deg,#DFF3FF 0%,#FFF7DC 100%)" }}>
-      <header className="px-4 pt-4 pb-2 text-center">
-        <div className="inline-flex items-center gap-1.5 text-2xl sm:text-3xl font-extrabold text-slate-800 drop-shadow-sm">
-          <Sparkles className="text-amber-500" size={24} />
-          算数クエスト
-          <Sparkles className="text-amber-500" size={24} />
+          {children}
         </div>
-        <div className="text-slate-600 text-xs font-bold mt-0.5">〜 小数と分数の冒険 〜</div>
-      </header>
+      );
+    }
 
-      <div className="max-w-2xl mx-auto px-4">
-        <div className="bg-white rounded-3xl shadow-lg p-3 flex items-center gap-3 border-b-4 border-violet-200">
-          <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center text-white font-extrabold shadow shrink-0"
-            style={{ background: "linear-gradient(135deg,#A78BFA,#7C3AED)" }}>
-            <div className="text-[9px]">レベル</div>
-            <div className="text-xl leading-none">{level}</div>
+    const LESSONS = {
+      d2: () => (
+        <>
+          <LessonCard title="動かして覚えよう：くり上がりなしのたし算">
+            <DemoAddSubNoCarry />
+          </LessonCard>
+          <LessonCard title="ひき算も手順は同じ">
+            <div className="flex justify-center"><Hissan a="0.8" b="0.3" op="−" ans="0.5" size="text-2xl" /></div>
+            <div className="text-center text-xs font-bold text-slate-500 mt-1">そろえる → 位ごとにひく → 点をおろす</div>
+          </LessonCard>
+        </>
+      ),
+      d3: () => (
+        <>
+          <LessonCard title="動かして覚えよう：くり上がりのあるたし算">
+            <DemoCarry />
+          </LessonCard>
+          <LessonCard title="もう1つの例（2.3＋1.9）">
+            <div className="flex justify-center mb-1"><Hissan a="2.3" b="1.9" op="＋" ans="4.2" size="text-2xl" /></div>
+            <StepsViz lines={[
+              "3＋9＝12 → 2を書いて1くり上げ",
+              "一の位:2＋1＋くり上げた1＝4",
+            ]} />
+          </LessonCard>
+        </>
+      ),
+      d4: () => (
+        <>
+          <LessonCard title="動かして覚えよう：くり下がりのあるひき算">
+            <DemoBorrow />
+          </LessonCard>
+          <LessonCard title="整数からひくとき（3−1.2）">
+            <div className="flex justify-center mb-1"><Hissan a="3.0" b="1.2" op="−" ans="1.8" size="text-2xl" /></div>
+            <StepsViz lines={[
+              "3を「3.0」と考えて小数点をそろえる",
+              "0−2はできない → 1くり下げて 10−2＝8",
+              "一の位:2−1＝1 → 答えは 1.8",
+            ]} />
+          </LessonCard>
+        </>
+      ),
+      d5: () => (
+        <>
+          <LessonCard title="動かして覚えよう：×10のルール">
+            <DemoShiftX10 />
+          </LessonCard>
+          <LessonCard title="動かして覚えよう：小数×小数の筆算">
+            <DemoMultRight />
+          </LessonCard>
+          <LessonCard title="整数は「そのまま右にそろえる」">
+            <div className="flex justify-center mb-1"><Hissan a="1.5" b="2" op="×" ans="3" size="text-2xl" /></div>
+            <div className="text-center text-xs font-bold text-slate-500">
+              2.0のような数は「2」と書いて右にそろえる。答えの3.0も「3」と書く。
+            </div>
+          </LessonCard>
+        </>
+      ),
+      d6: () => (
+        <>
+          <LessonCard title="動かして覚えよう：÷10のルール">
+            <DemoShiftDiv10 />
+          </LessonCard>
+          <LessonCard title="動かして覚えよう：小数のわり算は整数に変身">
+            <DemoDivMove />
+          </LessonCard>
+        </>
+      ),
+      d7: () => (
+        <>
+          <LessonCard title="ボス戦前の最終確認！">
+            <StepsViz lines={[
+              "たし算・ひき算 → 小数点をタテにそろえる",
+              "×10 → 小数点が右へ ／ ÷10 → 左へ",
+              "かけ算 → 右にそろえて、小数点の右の数を合計",
+              "小数で割る → 両方の小数点を動かして整数に変身",
+            ]} />
+          </LessonCard>
+          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 font-extrabold text-xs text-rose-600 text-center">
+            ⏰ 全10問・制限時間{BOSS_TIME}秒！ボタンを押すとタイマーが始まるぞ。
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex justify-between text-[10px] font-extrabold text-slate-500 mb-0.5">
-              <span><Zap size={12} className="inline text-violet-500" /> {xp} XP</span>
-              <span>次のレベルまで {Math.max(0, nextLevelXp - xp)} XP</span>
-            </div>
-            <div className="h-3 bg-violet-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${pct}%`, background: "linear-gradient(90deg,#A78BFA,#7C3AED)" }} />
-            </div>
-            <div className="flex gap-1.5 mt-1.5 flex-wrap">
-              {["小数マスター","分数マスター"].map(b => (
-                <span key={b} className={`inline-flex items-center gap-0.5 text-[10px] font-extrabold rounded-full px-2 py-0.5 ${badges.includes(b) ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400"}`}>
-                  {badges.includes(b) ? <Trophy size={12} /> : <Lock size={10} />} {b}
-                </span>
+        </>
+      ),
+      f2: () => (
+        <>
+          <LessonCard title="動かして覚えよう：約分">
+            <DemoYakubun />
+          </LessonCard>
+          <LessonCard title="動かして覚えよう：通分">
+            <DemoTsubun />
+          </LessonCard>
+        </>
+      ),
+      f3: () => (
+        <>
+          <LessonCard title="動かして覚えよう：分母が同じたし算">
+            <DemoFracAddSame />
+          </LessonCard>
+          <LessonCard title="分母が違うときは、まず通分（ステージ2のワザ）">
+            <StepsViz lines={[
+              "1/2 ＋ 1/3 は、そのままではたせない",
+              "分母を6にそろえる：1/2 ＝ 3/6 ， 1/3 ＝ 2/6",
+              "3/6 ＋ 2/6 ＝ 5/6",
+              "最後に約分できるかチェック！",
+            ]} />
+          </LessonCard>
+        </>
+      ),
+      f4: () => (
+        <>
+          <LessonCard title="動かして覚えよう：分数のかけ算">
+            <DemoFracMul />
+          </LessonCard>
+          <LessonCard title="動かして覚えよう：分数のわり算（逆数）">
+            <DemoFlip />
+          </LessonCard>
+        </>
+      ),
+      f5: () => (
+        <>
+          <LessonCard title="ボス戦前の最終確認！">
+            <StepsViz lines={[
+              "分母が同じ → 分子だけ計算",
+              "分母が違う → 通分してから",
+              "かけ算 → 分子どうし・分母どうし",
+              "わり算 → ひっくり返してかけ算",
+              "最後の約分を忘れずに！",
+            ]} />
+          </LessonCard>
+          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 font-extrabold text-xs text-rose-600 text-center">
+            ⏰ 全10問・制限時間{BOSS_TIME}秒！ボタンを押すとタイマーが始まるぞ。
+          </div>
+        </>
+      ),
+    };
+
+    /* ================= 探検用コンポーネント ================= */
+    function DecimalExplore() {
+      const [v, setV] = useState(3);
+      return (
+        <div>
+          <h2 className="text-lg font-extrabold text-slate-800 text-center mb-0.5">1 を 10 に分けてみよう</h2>
+          <p className="text-center text-slate-500 font-bold mb-3 text-xs">スライダーを動かして、水槽に水をためてみよう</p>
+          <div className="flex justify-center mb-2">
+            <div className="flex h-12 w-full max-w-md rounded-2xl overflow-hidden border-4 border-sky-600 bg-sky-50">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="flex-1 border-r border-sky-200 last:border-r-0 transition-colors duration-300"
+                  style={{ background: i < v ? "linear-gradient(180deg,#7CD4FF,#2E86DE)" : "transparent" }} />
               ))}
             </div>
           </div>
+          <input type="range" min={0} max={10} value={v} onChange={e => setV(Number(e.target.value))}
+            className="w-full max-w-md mx-auto block accent-sky-600" aria-label="0.1きざみのスライダー" style={{ height: "1.8rem" }} />
+          <div className="text-center mt-1">
+            <span className="text-3xl font-extrabold text-sky-700">{v === 10 ? "1.0" : `0.${v}`}</span>
+            <div className="text-slate-600 text-sm font-bold mt-0.5">
+              0.1 が <span className="text-sky-700 text-lg">{v}</span> 個分
+              {v === 10 && <span className="ml-1 text-emerald-600 text-xs">→ 満タンで 1！🎉</span>}
+            </div>
+          </div>
+          <div className="mt-3 rounded-2xl bg-sky-50 p-3 text-slate-700 font-bold text-xs leading-relaxed">
+            1を10等分した1つ分が <span className="text-sky-700">0.1</span>。このように「1より小さい数」を表すのが小数だ。
+          </div>
         </div>
-      </div>
+      );
+    }
 
-      <div className="max-w-2xl mx-auto px-4 mt-4 grid sm:grid-cols-2 gap-4">
-        {["d","f"].map(qk => {
-          const meta = QUEST_META[qk];
-          const stages = STAGES.filter(s => s.quest === qk);
-          const doneCount = stages.filter(s => cleared.has(s.id)).length;
-          return (
-            <section key={qk} className="bg-white rounded-3xl shadow-lg overflow-hidden border-b-4" style={{ borderColor: meta.color }}>
-              <div className="px-4 py-2.5 text-white" style={{ background: meta.grad }}>
-                <div className="text-lg font-extrabold drop-shadow">{meta.emoji} {meta.name}</div>
-                <div className="text-[10px] font-bold opacity-90">クリア {doneCount} / {stages.length}</div>
+    function FractionExplore() {
+      const [den, setDen] = useState(4);
+      const [num, setNum] = useState(1);
+      return (
+        <div>
+          <h2 className="text-lg font-extrabold text-slate-800 text-center mb-0.5">ピザを分けよう</h2>
+          <p className="text-center text-slate-500 font-bold mb-2 text-xs">数字を変えると、ピザがリアルタイムで変わるよ</p>
+          <div className="flex justify-center" style={{ animation: "floaty 3s ease-in-out infinite" }}>
+            <Pizza den={den} num={num} size={140} />
+          </div>
+          <div className="flex items-center justify-center gap-4 mt-3 flex-wrap">
+            <div className="text-center text-4xl font-extrabold text-orange-700">
+              <Frac n={num} d={den} />
+            </div>
+            <div className="space-y-1.5">
+              <Counter label="分子（取る数）" value={num} min={0} max={den} onChange={setNum} color="#E8590C" />
+              <Counter label="分母（分ける数）" value={den} min={1} max={12}
+                onChange={(d) => { setDen(d); setNum(n => Math.min(n, d)); }} color="#B8500A" />
+            </div>
+          </div>
+          <div className="mt-3 rounded-2xl bg-orange-50 p-3 text-slate-700 font-bold text-xs leading-relaxed">
+            下の数（<span className="text-orange-700">分母</span>）は「何等分したか」、上の数（<span className="text-orange-700">分子</span>）は「その何個分か」。
+            {num === den && num > 0 && <span className="text-emerald-600"> いま全部そろってちょうど1枚分！🎉</span>}
+          </div>
+        </div>
+      );
+    }
+    function Counter({ label, value, min, max, onChange, color }) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <div className="text-[10px] font-extrabold w-20 text-slate-600">{label}</div>
+          <button onClick={() => onChange(Math.max(min, value - 1))} aria-label={`${label}を減らす`}
+            className="w-8 h-8 rounded-full text-white text-lg font-extrabold shadow active:scale-90" style={{ background: color }}>−</button>
+          <div className="w-6 text-center text-lg font-extrabold text-slate-800">{value}</div>
+          <button onClick={() => onChange(Math.min(max, value + 1))} aria-label={`${label}を増やす`}
+            className="w-8 h-8 rounded-full text-white text-lg font-extrabold shadow active:scale-90" style={{ background: color }}>＋</button>
+        </div>
+      );
+    }
+
+    /* ================= 主要画面コンポーネント ================= */
+    function StageScreen({ stage, onClear, onExit, addXp }) {
+      const [phase, setPhase] = useState("lesson");
+      const meta = QUEST_META[stage.quest];
+      const isBoss = stage.type === "boss";
+
+      if (phase === "quiz") {
+        return <Quiz stage={stage} questions={Q[stage.id]} onClear={onClear} onExit={onExit} addXp={addXp} />;
+      }
+
+      const Lesson = LESSONS[stage.id];
+      return (
+        <div className="min-h-screen pb-6" style={{ background: `linear-gradient(180deg, ${meta.light}, #FFFFFF)` }}>
+          <StageHeader stage={stage} meta={meta} hearts={null} onExit={onExit} />
+          <div className="max-w-xl mx-auto px-4 mt-3">
+            <div className="bg-white rounded-3xl shadow-xl p-4 border-b-4 animate-[popIn_0.35s_ease]" style={{ borderColor: meta.color }}>
+              {stage.type === "explore"
+                ? (stage.quest === "d" ? <DecimalExplore /> : <FractionExplore />)
+                : (
+                  <>
+                    <div className="text-center text-sm font-extrabold text-slate-800 mb-2.5">
+                      📖 動かしながら「解き方」を確認しよう
+                    </div>
+                    {Lesson && <Lesson />}
+                  </>
+                )}
+              <button onClick={() => setPhase("quiz")}
+                className="mt-4 w-full rounded-2xl py-2.5 text-lg font-extrabold text-white shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                style={{ background: meta.grad }}>
+                {isBoss ? <><Icon name="swords" size={18} /> ボスに挑む！（タイマー開始）</> : "クイズに挑戦！（全10問）"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ClearScreen({ stage, gained, newBadge, onBack }) {
+      const meta = QUEST_META[stage.quest];
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: `linear-gradient(180deg, ${meta.light}, #FFFFFF)` }}>
+          <Confetti trigger={1} />
+          <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-md w-full text-center animate-[popIn_0.45s_ease]">
+            <div className="text-5xl mb-1">{newBadge ? "👑" : "🌟"}</div>
+            <h2 className="text-2xl font-extrabold text-slate-800 mb-0.5">ステージクリア！</h2>
+            <p className="text-slate-500 font-bold text-sm mb-3">{meta.emoji} {stage.name}</p>
+            <div className="rounded-2xl bg-violet-50 py-2 px-3 font-extrabold text-violet-700 text-lg mb-2">
+              <Icon name="zap" className="inline mr-1" size={18} /> ＋{gained + 30} XP
+            </div>
+            {newBadge && (
+              <div className="rounded-2xl p-3 mb-2 text-white font-extrabold text-lg shadow-lg" style={{ background: meta.grad, animation: "wiggle 1s 2" }}>
+                <Icon name="crown" className="inline mr-1.5" size={18} />バッジ獲得：{newBadge}！
               </div>
-              <div className="p-3 space-y-2">
-                {stages.map((s) => {
-                  const done = cleared.has(s.id);
-                  const isBoss = s.type === "boss";
-                  return (
-                    <button key={s.id} onClick={() => onSelect(s)}
-                      aria-label={`ステージ${s.num} ${s.name}`}
-                      className="w-full flex items-center gap-2.5 rounded-2xl p-2 text-left transition-transform active:scale-[0.98] border-b-2 bg-slate-50 hover:bg-amber-50 border-slate-200 focus:outline-none">
-                      <div className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-white font-extrabold text-sm shadow"
-                        style={{ background: done ? "linear-gradient(135deg,#FBBF24,#F59E0B)" : meta.grad, animation: isBoss && !done ? "floaty 2.2s ease-in-out infinite" : "none" }}>
-                        {done ? <Star fill="white" size={18} /> : (isBoss ? "👾" : s.num)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className={`font-extrabold text-sm ${isBoss ? "text-rose-600" : "text-slate-800"}`}>
-                          {isBoss ? "⚔️ " : ""}{s.name}
-                        </div>
-                        <div className="text-[10px] font-bold text-slate-500 truncate">{s.desc}</div>
-                      </div>
-                      {done && <Award className="text-amber-500 shrink-0" size={18} />}
-                    </button>
-                  );
-                })}
+            )}
+            <button onClick={onBack}
+              className="mt-2 w-full rounded-2xl py-2.5 text-lg font-extrabold text-white shadow-lg active:scale-95"
+              style={{ background: meta.grad }}>
+              マップに戻る
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const STAGES = [
+      { id: "d1", quest: "d", num: 1, name: "小数とは？", type: "explore", desc: "バーで確かめよう" },
+      { id: "d2", quest: "d", num: 2, name: "たし算・ひき算（基本）", type: "quiz-input", desc: "くり上がり・くり下がりなし" },
+      { id: "d3", quest: "d", num: 3, name: "たし算（くり上がり）", type: "quiz-input", desc: "くり上がりあり" },
+      { id: "d4", quest: "d", num: 4, name: "ひき算（くり下がり）", type: "quiz-input", desc: "くり下がりあり" },
+      { id: "d5", quest: "d", num: 5, name: "かけ算", type: "quiz", desc: "右にそろえて筆算" },
+      { id: "d6", quest: "d", num: 6, name: "わり算", type: "quiz", desc: "小数点を動かして整数に" },
+      { id: "d7", quest: "d", num: 7, name: "ボスバトル", type: "boss", desc: "タイマー付き総合クイズ" },
+      { id: "f1", quest: "f", num: 1, name: "ピザを分けよう", type: "explore", desc: "分数の仕組み" },
+      { id: "f2", quest: "f", num: 2, name: "約分・通分", type: "quiz", desc: "同じ大きさを見つけろ" },
+      { id: "f3", quest: "f", num: 3, name: "たし算・ひき算", type: "quiz", desc: "分母をそろえて" },
+      { id: "f4", quest: "f", num: 4, name: "かけ算・わり算", type: "quiz", desc: "逆数のワザ" },
+      { id: "f5", quest: "f", num: 5, name: "ボスバトル", type: "boss", desc: "タイマー付き総合クイズ" },
+    ];
+    const QUEST_META = {
+      d: { name: "小数クエスト", color: "#2E86DE", light: "#E3F2FF", grad: "linear-gradient(135deg,#4DA9FF,#2E86DE)", emoji: "🌊" },
+      f: { name: "分数クエスト", color: "#E8590C", light: "#FFF0E3", grad: "linear-gradient(135deg,#FFB25E,#E8590C)", emoji: "🍕" },
+    };
+    const BOSS_TIME = 120;
+
+    function QuestMap({ cleared, badges, xp, level, onSelect }) {
+      const nextLevelXp = level * 100;
+      const prevLevelXp = (level - 1) * 100;
+      const pct = Math.min(100, ((xp - prevLevelXp) / (nextLevelXp - prevLevelXp)) * 100);
+
+      return (
+        <div className="min-h-screen pb-10" style={{ background: "linear-gradient(180deg,#DFF3FF 0%,#FFF7DC 100%)" }}>
+          <header className="px-4 pt-4 pb-2 text-center">
+            <div className="inline-flex items-center gap-1.5 text-2xl sm:text-3xl font-extrabold text-slate-800 drop-shadow-sm">
+              <Icon name="sparkles" className="text-amber-500" size={24} />
+              算数クエスト
+              <Icon name="sparkles" className="text-amber-500" size={24} />
+            </div>
+            <div className="text-slate-600 text-xs font-bold mt-0.5">〜 小数と分数の冒険 〜</div>
+          </header>
+
+          <div className="max-w-2xl mx-auto px-4">
+            <div className="bg-white rounded-3xl shadow-lg p-3 flex items-center gap-3 border-b-4 border-violet-200">
+              <div className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center text-white font-extrabold shadow shrink-0"
+                style={{ background: "linear-gradient(135deg,#A78BFA,#7C3AED)" }}>
+                <div className="text-[9px]">レベル</div>
+                <div className="text-xl leading-none">{level}</div>
               </div>
-            </section>
-          );
-        })}
-      </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between text-[10px] font-extrabold text-slate-500 mb-0.5">
+                  <span><Icon name="zap" size={12} className="inline text-violet-500" /> {xp} XP</span>
+                  <span>次のレベルまで {Math.max(0, nextLevelXp - xp)} XP</span>
+                </div>
+                <div className="h-3 bg-violet-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${pct}%`, background: "linear-gradient(90deg,#A78BFA,#7C3AED)" }} />
+                </div>
+                <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                  {["小数マスター","分数マスター"].map(b => (
+                    <span key={b} className={`inline-flex items-center gap-0.5 text-[10px] font-extrabold rounded-full px-2 py-0.5 ${badges.includes(b) ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400"}`}>
+                      {badges.includes(b) ? <Icon name="trophy" size={12} /> : <Icon name="lock" size={10} />} {b}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
 
-      <footer className="text-center mt-6 text-slate-500 font-bold text-xs px-4">
-        <MapIcon size={14} className="inline mr-1" />
-        好きなステージから自由に挑戦しよう！
-      </footer>
-    </div>
-  );
-}
+          <div className="max-w-2xl mx-auto px-4 mt-4 grid sm:grid-cols-2 gap-4">
+            {["d","f"].map(qk => {
+              const meta = QUEST_META[qk];
+              const stages = STAGES.filter(s => s.quest === qk);
+              const doneCount = stages.filter(s => cleared.has(s.id)).length;
+              return (
+                <section key={qk} className="bg-white rounded-3xl shadow-lg overflow-hidden border-b-4" style={{ borderColor: meta.color }}>
+                  <div className="px-4 py-2.5 text-white" style={{ background: meta.grad }}>
+                    <div className="text-lg font-extrabold drop-shadow">{meta.emoji} {meta.name}</div>
+                    <div className="text-[10px] font-bold opacity-90">クリア {doneCount} / {stages.length}</div>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {stages.map((s) => {
+                      const done = cleared.has(s.id);
+                      const isBoss = s.type === "boss";
+                      return (
+                        <button key={s.id} onClick={() => onSelect(s)}
+                          aria-label={`ステージ${s.num} ${s.name}`}
+                          className="w-full flex items-center gap-2.5 rounded-2xl p-2 text-left transition-transform active:scale-[0.98] border-b-2 bg-slate-50 hover:bg-amber-50 border-slate-200 focus:outline-none">
+                          <div className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-white font-extrabold text-sm shadow"
+                            style={{ background: done ? "linear-gradient(135deg,#FBBF24,#F59E0B)" : meta.grad, animation: isBoss && !done ? "floaty 2.2s ease-in-out infinite" : "none" }}>
+                            {done ? <Icon name="star" fill="white" size={18} /> : (isBoss ? "👾" : s.num)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className={`font-extrabold text-sm ${isBoss ? "text-rose-600" : "text-slate-800"}`}>
+                              {isBoss ? "⚔️ " : ""}{s.name}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-500 truncate">{s.desc}</div>
+                          </div>
+                          {done && <Icon name="award" className="text-amber-500 shrink-0" size={18} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
 
-/* ================= アプリ本体 ================= */
-export default function App() {
-  const [screen, setScreen] = useState({ view: "map" });
-  const [xp, setXp] = useState(0);
-  const [cleared, setCleared] = useState(() => new Set());
-  const [badges, setBadges] = useState([]);
-  const level = Math.floor(xp / 100) + 1;
+          <footer className="text-center mt-6 text-slate-500 font-bold text-xs px-4">
+            <Icon name="map" size={14} className="inline mr-1" />
+            好きなステージから自由に挑戦しよう！
+          </footer>
+        </div>
+      );
+    }
 
-  const addXp = (n) => setXp(x => x + n);
+    function App() {
+      const [screen, setScreen] = useState({ view: "map" });
+      const [xp, setXp] = useState(0);
+      const [cleared, setCleared] = useState(() => new Set());
+      const [badges, setBadges] = useState([]);
+      const level = Math.floor(xp / 100) + 1;
 
-  const handleClear = (stage, gained) => {
-    addXp(30);
-    let newBadge = null;
-    setCleared(prev => {
-      const next = new Set(prev);
-      next.add(stage.id);
-      return next;
-    });
-    if (stage.id === "d7" && !badges.includes("小数マスター")) newBadge = "小数マスター";
-    if (stage.id === "f5" && !badges.includes("分数マスター")) newBadge = "分数マスター";
-    if (newBadge) setBadges(b => [...b, newBadge]);
-    setScreen({ view: "clear", stage, gained, newBadge });
-  };
+      const addXp = (n) => setXp(x => x + n);
 
-  return (
-    <div style={{ fontFamily: FONT }}>
-      <GlobalStyle />
-      {screen.view === "map" && (
-        <QuestMap cleared={cleared} badges={badges} xp={xp} level={level}
-          onSelect={(s) => setScreen({ view: "stage", stage: s })} />
-      )}
-      {screen.view === "stage" && (
-        <StageScreen stage={screen.stage} addXp={addXp}
-          onClear={(g) => handleClear(screen.stage, g)}
-          onExit={() => setScreen({ view: "map" })} />
-      )}
-      {screen.view === "clear" && (
-        <ClearScreen stage={screen.stage} gained={screen.gained} newBadge={screen.newBadge}
-          onBack={() => setScreen({ view: "map" })} />
-      )}
-    </div>
-  );
-}
+      const handleClear = (stage, gained) => {
+        addXp(30);
+        let newBadge = null;
+        setCleared(prev => {
+          const next = new Set(prev);
+          next.add(stage.id);
+          return next;
+        });
+        if (stage.id === "d7" && !badges.includes("小数マスター")) newBadge = "小数マスター";
+        if (stage.id === "f5" && !badges.includes("分数マスター")) newBadge = "分数マスター";
+        if (newBadge) setBadges(b => [...b, newBadge]);
+        setScreen({ view: "clear", stage, gained, newBadge });
+      };
+
+      return (
+        <div style={{ fontFamily: FONT }}>
+          <GlobalStyle />
+          {screen.view === "map" && (
+            <QuestMap cleared={cleared} badges={badges} xp={xp} level={level}
+              onSelect={(s) => setScreen({ view: "stage", stage: s })} />
+          )}
+          {screen.view === "stage" && (
+            <StageScreen stage={screen.stage} addXp={addXp}
+              onClear={(g) => handleClear(screen.stage, g)}
+              onExit={() => setScreen({ view: "map" })} />
+          )}
+          {screen.view === "clear" && (
+            <ClearScreen stage={screen.stage} gained={screen.gained} newBadge={screen.newBadge}
+              onBack={() => setScreen({ view: "map" })} />
+          )}
+        </div>
+      );
+    }
+
+    const root = Frankenstein = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
